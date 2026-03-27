@@ -1,0 +1,409 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronLeft, ChevronRight, Check, Upload, Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useCaseStore } from '@/stores/caseStore';
+import { useAuthStore } from '@/stores/authStore';
+import {
+  Button,
+  Input,
+  Select,
+  TextArea,
+  FileUpload,
+  Modal,
+  Card,
+  CardContent,
+} from '@/components/ui';
+import { uploadFile, generateFileHash, STORAGE_BUCKETS } from '@/lib/supabase';
+import type { UploadedFile } from '@/components/ui/FileUpload';
+import {
+  CASE_CATEGORY_LABELS,
+  CASE_URGENCY_LABELS,
+  type CaseCategory,
+  type CaseUrgency,
+} from '@/types';
+import { cn } from '@/utils/cn';
+
+const STEPS = [
+  { id: 1, title: 'Basic Info' },
+  { id: 2, title: 'Location' },
+  { id: 3, title: 'Evidence' },
+  { id: 4, title: 'Review' },
+];
+
+const step1Schema = z.object({
+  title: z.string().min(3, 'Title must be at least 3 characters'),
+  description: z.string().min(10, 'Description must be at least 10 characters'),
+  category: z.enum([
+    'fraud', 'robbery', 'murder', 'assault', 'domestic_dispute',
+    'land_dispute', 'cybercrime', 'corruption', 'kidnapping', 'missing_person', 'other'
+  ]),
+  urgency: z.enum(['low', 'medium', 'high', 'critical']),
+});
+
+const step2Schema = z.object({
+  location: z.string().min(2, 'Location is required'),
+  latitude: z.string().optional(),
+  longitude: z.string().optional(),
+});
+
+type Step1Data = z.infer<typeof step1Schema>;
+type Step2Data = z.infer<typeof step2Schema>;
+
+const CATEGORY_OPTIONS = Object.entries(CASE_CATEGORY_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
+const URGENCY_OPTIONS = Object.entries(CASE_URGENCY_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
+const ACCEPT_TYPES = 'image/*,video/*,audio/*,.pdf,.doc,.docx';
+
+export function CreateCasePage() {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const { createCase, addEvidence } = useCaseStore();
+
+  const [step, setStep] = useState(1);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdCaseId, setCreatedCaseId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const step1Form = useForm<Step1Data>({
+    resolver: zodResolver(step1Schema),
+    defaultValues: {
+      title: '',
+      description: '',
+      category: 'other',
+      urgency: 'medium',
+    },
+  });
+
+  const step2Form = useForm<Step2Data>({
+    resolver: zodResolver(step2Schema),
+    defaultValues: {
+      location: '',
+      latitude: '',
+      longitude: '',
+    },
+  });
+
+  const handleNext = async () => {
+    if (step === 1) {
+      const valid = await step1Form.trigger();
+      if (valid) setStep(2);
+    } else if (step === 2) {
+      const valid = await step2Form.trigger();
+      if (valid) setStep(3);
+    } else if (step === 3) {
+      setStep(4);
+    }
+  };
+
+  const handleBack = () => {
+    setStep((s) => Math.max(1, s - 1));
+  };
+
+  const handleSubmit = async () => {
+    if (!user?.user_id) {
+      toast.error('You must be logged in to create a case');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const step1Data = step1Form.getValues();
+      const step2Data = step2Form.getValues();
+
+      const caseData = {
+        title: step1Data.title,
+        description: step1Data.description,
+        category: step1Data.category as CaseCategory,
+        urgency: step1Data.urgency as CaseUrgency,
+        location: step2Data.location,
+        latitude: step2Data.latitude ? parseFloat(step2Data.latitude) : undefined,
+        longitude: step2Data.longitude ? parseFloat(step2Data.longitude) : undefined,
+        complainant_id: user.user_id,
+        status: 'submitted' as const,
+      };
+
+      const { id, error } = await createCase(caseData);
+      if (error || !id) {
+        toast.error(error ?? 'Failed to create case');
+        return;
+      }
+
+      // Upload evidence files
+      for (const uf of uploadedFiles) {
+        const path = `${id}/${Date.now()}-${uf.file.name}`;
+        const { url, error: uploadError } = await uploadFile(
+          STORAGE_BUCKETS.EVIDENCE,
+          path,
+          uf.file
+        );
+        if (uploadError) {
+          toast.error(`Failed to upload ${uf.file.name}`);
+          continue;
+        }
+        const hash = await generateFileHash(uf.file);
+        await addEvidence({
+          case_id: id,
+          uploaded_by: user.user_id,
+          file_url: url,
+          file_name: uf.file.name,
+          file_type: uf.file.type,
+          file_size: uf.file.size,
+          file_hash: hash,
+          chain_of_custody: [],
+        });
+      }
+
+      setCreatedCaseId(id);
+      setShowSuccessModal(true);
+      toast.success('Case created successfully!');
+    } catch (err) {
+      toast.error('Something went wrong. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const progress = (step / STEPS.length) * 100;
+
+  return (
+    <div className="min-h-screen bg-surface-50 py-8">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6">
+        {/* Progress */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mb-8"
+        >
+          <div className="flex justify-between mb-2">
+            {STEPS.map((s) => (
+              <span
+                key={s.id}
+                className={cn(
+                  'text-sm font-medium',
+                  step >= s.id ? 'text-brand-600' : 'text-surface-400'
+                )}
+              >
+                {s.title}
+              </span>
+            ))}
+          </div>
+          <div className="h-2 bg-surface-200 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-brand-500 rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+        </motion.div>
+
+        {/* Form */}
+        <Card className="overflow-hidden">
+          <CardContent className="p-6 sm:p-8">
+            <AnimatePresence mode="wait">
+              {step === 1 && (
+                <motion.div
+                  key="step1"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-4"
+                >
+                  <Input
+                    label="Case Title"
+                    placeholder="Brief title for your case"
+                    error={step1Form.formState.errors.title?.message}
+                    {...step1Form.register('title')}
+                  />
+                  <TextArea
+                    label="Description"
+                    placeholder="Provide detailed description of the incident..."
+                    rows={5}
+                    error={step1Form.formState.errors.description?.message}
+                    {...step1Form.register('description')}
+                  />
+                  <Select
+                    label="Category"
+                    options={CATEGORY_OPTIONS}
+                    error={step1Form.formState.errors.category?.message}
+                    {...step1Form.register('category')}
+                  />
+                  <Select
+                    label="Urgency"
+                    options={URGENCY_OPTIONS}
+                    error={step1Form.formState.errors.urgency?.message}
+                    {...step1Form.register('urgency')}
+                  />
+                </motion.div>
+              )}
+
+              {step === 2 && (
+                <motion.div
+                  key="step2"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-4"
+                >
+                  <Input
+                    label="Location"
+                    placeholder="Where did this occur?"
+                    error={step2Form.formState.errors.location?.message}
+                    {...step2Form.register('location')}
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="Latitude (optional)"
+                      placeholder="e.g. 6.5244"
+                      type="number"
+                      step="any"
+                      {...step2Form.register('latitude')}
+                    />
+                    <Input
+                      label="Longitude (optional)"
+                      placeholder="e.g. 3.3792"
+                      type="number"
+                      step="any"
+                      {...step2Form.register('longitude')}
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 3 && (
+                <motion.div
+                  key="step3"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <p className="text-sm text-surface-600 mb-4">
+                    Upload images, videos, audio, or documents as evidence.
+                  </p>
+                  <FileUpload
+                    accept={ACCEPT_TYPES}
+                    multiple
+                    value={uploadedFiles}
+                    onChange={setUploadedFiles}
+                  />
+                </motion.div>
+              )}
+
+              {step === 4 && (
+                <motion.div
+                  key="step4"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-4"
+                >
+                  <div className="rounded-lg bg-surface-50 p-4 space-y-3">
+                    <h4 className="font-semibold text-surface-900">{step1Form.watch('title')}</h4>
+                    <p className="text-sm text-surface-600">{step1Form.watch('description')}</p>
+                    <div className="flex gap-2 flex-wrap">
+                      <span className="px-2 py-1 rounded-full bg-brand-100 text-brand-700 text-xs font-medium">
+                        {CASE_CATEGORY_LABELS[step1Form.watch('category') as CaseCategory]}
+                      </span>
+                      <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+                        {CASE_URGENCY_LABELS[step1Form.watch('urgency') as CaseUrgency]}
+                      </span>
+                    </div>
+                    <p className="text-sm text-surface-600">
+                      <strong>Location:</strong> {step2Form.watch('location')}
+                    </p>
+                    {uploadedFiles.length > 0 && (
+                      <p className="text-sm text-surface-600">
+                        <strong>Evidence:</strong> {uploadedFiles.length} file(s)
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Actions */}
+            <div className="flex justify-between mt-8 pt-6 border-t border-surface-200">
+              <Button
+                variant="ghost"
+                icon={ChevronLeft}
+                onClick={handleBack}
+                disabled={step === 1}
+              >
+                Back
+              </Button>
+              {step < 4 ? (
+                <Button icon={ChevronRight} onClick={handleNext}>
+                  Next
+                </Button>
+              ) : (
+                <Button
+                  icon={isSubmitting ? Loader2 : Upload}
+                  loading={isSubmitting}
+                  onClick={handleSubmit}
+                >
+                  Submit Case
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Success Modal */}
+      <Modal
+        isOpen={showSuccessModal}
+        onClose={() => {
+          setShowSuccessModal(false);
+          navigate(createdCaseId ? `/app/cases/${createdCaseId}` : '/app/cases');
+        }}
+        title="Case Created Successfully"
+        size="md"
+      >
+        <div className="text-center py-4">
+          <div className="mx-auto w-16 h-16 rounded-full bg-brand-100 flex items-center justify-center mb-4">
+            <Check className="text-brand-600" size={32} />
+          </div>
+          <p className="text-surface-600 mb-6">
+            Your case has been submitted. Our team will review it and assign an investigator.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSuccessModal(false);
+                navigate('/app/cases');
+              }}
+            >
+              Back to Cases
+            </Button>
+            <Button
+              onClick={() => {
+                setShowSuccessModal(false);
+                navigate(`/app/cases/${createdCaseId}`);
+              }}
+            >
+              View Case
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
