@@ -27,9 +27,26 @@ export default function LandingPage() {
 
       <LandingHero />
 
-      <section className="py-6 sm:py-8 bg-white border-b border-surface-200">
+      <section className="py-4 md:py-8 bg-white border-b border-surface-200">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="flex flex-wrap justify-center items-center gap-6 sm:gap-10 text-sm sm:text-base text-surface-700">
+          {/* Mobile: compact icon row + short labels */}
+          <div className="flex md:hidden justify-between items-stretch gap-2 text-center">
+            {[
+              { label: 'Investigations', full: 'Vetted investigators & legal counsel' },
+              { label: 'Property', full: 'Property due diligence & fraud prevention' },
+              { label: 'Transparency', full: 'Institutional transparency & monitoring' },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="flex-1 flex flex-col items-center gap-1.5 rounded-xl bg-surface-50 border border-surface-200 py-3 px-2"
+              >
+                <CheckCircle className="w-6 h-6 text-forest-600 shrink-0" aria-hidden />
+                <span className="text-[11px] font-semibold text-surface-800 leading-tight">{item.label}</span>
+                <span className="sr-only">{item.full}</span>
+              </div>
+            ))}
+          </div>
+          <div className="hidden md:flex flex-wrap justify-center items-center gap-6 sm:gap-10 text-sm sm:text-base text-surface-700">
             <div className="flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-forest-600 shrink-0" />
               <span className="font-medium">Vetted investigators &amp; legal counsel</span>

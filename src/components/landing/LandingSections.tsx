@@ -29,27 +29,33 @@ export function LandingHero() {
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-black/30" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-forest-600/20 via-transparent to-transparent" />
 
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
-        <div className="grid lg:grid-cols-12 gap-10 lg:gap-14 items-center">
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-12 lg:py-16">
+        <div className="grid lg:grid-cols-12 gap-8 lg:gap-14 items-center">
           <motion.div
-            className="lg:col-span-7"
+            className="lg:col-span-7 order-2 lg:order-1"
             initial={{ opacity: 0, y: 28 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
-            <p className="text-forest-300 text-sm font-semibold tracking-widest uppercase mb-3">
+            <p className="text-forest-300 text-xs md:text-sm font-semibold tracking-widest uppercase mb-2 md:mb-3">
               The Security Watch
             </p>
-            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-[2.25rem] xl:text-5xl font-bold text-white leading-[1.15] tracking-tight">
-              Professional Investigative, Security &amp; Property Verification Services
+            <h1 className="text-xl sm:text-3xl md:text-4xl lg:text-[2.25rem] xl:text-5xl font-bold text-white leading-[1.15] tracking-tight">
+              <span className="md:hidden">Investigative, security &amp; property services</span>
+              <span className="hidden md:inline">
+                Professional Investigative, Security &amp; Property Verification Services
+              </span>
             </h1>
-            <p className="mt-5 text-base sm:text-lg text-surface-200/95 max-w-2xl leading-relaxed">
+            <p className="mt-4 md:mt-5 text-sm md:text-base lg:text-lg text-surface-200/95 max-w-2xl leading-relaxed md:hidden">
+              Vetted professionals. Secure platform. One place for cases, verification, and transparency.
+            </p>
+            <p className="mt-5 text-base sm:text-lg text-surface-200/95 max-w-2xl leading-relaxed hidden md:block">
               The Security Watch provides access to vetted private investigators, licensed legal
               practitioners, and forensic specialists. We also offer property verification and
               institutional transparency services — all delivered through a secure, technology-driven
               platform built for accountability.
             </p>
-            <div className="mt-8 flex flex-col sm:flex-row flex-wrap gap-4">
+            <div className="mt-6 md:mt-8 flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4">
               <Link to="/register" className="inline-flex">
                 <span className="inline-flex items-center justify-center gap-2 min-h-[52px] px-8 rounded-xl bg-forest-500 hover:bg-forest-400 text-white font-semibold shadow-lg shadow-black/25 transition-all hover:scale-[1.02] active:scale-[0.98]">
                   Report a Case
@@ -65,7 +71,7 @@ export function LandingHero() {
           </motion.div>
 
           <motion.div
-            className="lg:col-span-5"
+            className="lg:col-span-5 order-1 lg:order-2"
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.7, delay: 0.12 }}
@@ -74,7 +80,7 @@ export function LandingHero() {
               <img
                 src="/assets/hero-professional.jpg"
                 alt="Professional support when you need it most"
-                className="w-full aspect-[4/5] sm:aspect-[4/3] lg:aspect-[4/5] object-cover"
+                className="w-full aspect-[16/10] sm:aspect-[4/3] lg:aspect-[4/5] object-cover"
                 onError={(e) => {
                   const t = e.target as HTMLImageElement;
                   t.src =
@@ -82,9 +88,13 @@ export function LandingHero() {
                 }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8">
-                <p className="text-white font-semibold text-lg">Private Investigators · Legal Counsel · Forensic Specialists</p>
-                <p className="text-white/80 text-sm mt-1">One secure platform. Verified professionals. Measurable accountability.</p>
+              <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 md:p-8">
+                <p className="text-white font-semibold text-sm sm:text-base md:text-lg">
+                  Investigators · Legal · Forensics
+                </p>
+                <p className="text-white/80 text-xs sm:text-sm mt-1 hidden sm:block">
+                  One secure platform. Verified professionals. Measurable accountability.
+                </p>
               </div>
             </div>
           </motion.div>
@@ -96,28 +106,54 @@ export function LandingHero() {
 
 export function EmotionalStorySection() {
   return (
-    <section className="py-16 sm:py-20 bg-white">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center">
-        <ScrollReveal>
-          <h2 className="text-2xl sm:text-3xl font-bold text-surface-900 leading-snug">
-            About The Security Watch
-          </h2>
-        </ScrollReveal>
-        <ScrollReveal delay={0.08}>
-          <div className="mt-8 space-y-5 text-base sm:text-lg text-surface-600 leading-relaxed text-left sm:text-center">
-            <p>
-              The Security Watch was established to address the gap between citizens and the
-              professional resources needed to resolve cases of fraud, injustice, property disputes,
-              and institutional misconduct. We provide a structured, confidential, and
-              technology-enabled pathway for individuals to report matters, engage verified
-              professionals, and pursue resolution.
-            </p>
-            <p className="text-surface-900 text-lg sm:text-xl font-semibold leading-snug">
-              Where the system falls short, we provide the structure, expertise, and accountability
-              to move your case forward.
-            </p>
+    <section className="py-12 md:py-16 lg:py-20 bg-white">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 lg:items-center">
+          <ScrollReveal>
+            <div className="relative rounded-2xl overflow-hidden shadow-xl border border-surface-200 aspect-[4/3] lg:aspect-[5/4]">
+              <img
+                src="/assets/team-collaboration.jpg"
+                alt="The Security Watch — professional investigations and accountability"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const t = e.target as HTMLImageElement;
+                  t.src =
+                    'https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=1200&q=80';
+                }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-tr from-black/25 to-transparent pointer-events-none" />
+            </div>
+          </ScrollReveal>
+          <div className="text-left lg:pl-2">
+            <ScrollReveal>
+              <h2 className="text-2xl sm:text-3xl font-bold text-surface-900 leading-snug">
+                About The Security Watch
+              </h2>
+            </ScrollReveal>
+            <ScrollReveal delay={0.08}>
+              <div className="mt-6 md:mt-8 space-y-4 md:space-y-5 text-base sm:text-lg text-surface-600 leading-relaxed">
+                <p className="hidden md:block">
+                  The Security Watch was established to address the gap between citizens and the
+                  professional resources needed to resolve cases of fraud, injustice, property disputes,
+                  and institutional misconduct. We provide a structured, confidential, and
+                  technology-enabled pathway for individuals to report matters, engage verified
+                  professionals, and pursue resolution.
+                </p>
+                <p className="md:hidden text-surface-600 text-sm leading-relaxed">
+                  Structured, confidential support for fraud, property, and institutional matters — with
+                  verified professionals on your side.
+                </p>
+                <p className="text-surface-900 text-base md:text-lg lg:text-xl font-semibold leading-snug">
+                  <span className="md:hidden">Expertise and accountability when you need it most.</span>
+                  <span className="hidden md:inline">
+                    Where the system falls short, we provide the structure, expertise, and accountability
+                    to move your case forward.
+                  </span>
+                </p>
+              </div>
+            </ScrollReveal>
           </div>
-        </ScrollReveal>
+        </div>
       </div>
     </section>
   );
@@ -143,33 +179,47 @@ const whoCards = [
 
 export function WhoWeAreSection() {
   return (
-    <section className="py-16 sm:py-20 bg-surface-50 border-y border-surface-200/80">
+    <section className="py-12 md:py-16 lg:py-20 bg-surface-50 border-y border-surface-200/80">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <ScrollReveal>
-          <div className="max-w-3xl mx-auto text-center mb-14 sm:mb-16">
+          <div className="max-w-3xl mx-auto text-center mb-10 md:mb-14 lg:mb-16">
             <h2 className="text-2xl sm:text-3xl font-bold text-surface-900">Who We Are</h2>
-            <p className="mt-3 text-lg text-forest-800 font-semibold">A professional services platform built for accountability and resolution.</p>
-            <p className="mt-5 text-base sm:text-lg text-surface-600 leading-relaxed">
+            <p className="mt-2 md:mt-3 text-base md:text-lg text-forest-800 font-semibold">
+              A professional services platform built for accountability and resolution.
+            </p>
+            <p className="mt-4 md:mt-5 text-base sm:text-lg text-surface-600 leading-relaxed hidden md:block">
               The Security Watch operates as a centralised platform connecting individuals and
               organisations with qualified private investigators, licensed legal practitioners,
               forensic analysts, and security consultants. Our mandate is to deliver professional
               case management, property due diligence, and institutional oversight services through
               a secure, transparent, and results-oriented framework.
             </p>
+            <p className="mt-3 text-sm text-surface-600 leading-relaxed md:hidden">
+              Centralised access to investigators, legal counsel, and specialists — one secure framework.
+            </p>
           </div>
         </ScrollReveal>
-        <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
+        <div className="md:hidden grid grid-cols-3 gap-2 mb-8 rounded-xl overflow-hidden border border-surface-200" aria-hidden>
+          <img src="/assets/hero-professional.jpg" alt="" className="h-24 w-full object-cover" />
+          <img src="/assets/bodyguard-protection.jpg" alt="" className="h-24 w-full object-cover" />
+          <img src="/assets/property-verification.jpg" alt="" className="h-24 w-full object-cover" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 lg:gap-8">
           {whoCards.map((card, i) => (
             <ScrollReveal key={card.title} delay={i * 0.08}>
               <motion.div
                 whileHover={{ y: -4 }}
-                className="h-full rounded-2xl bg-white p-8 border border-surface-200 shadow-sm hover:shadow-xl hover:border-forest-200/60 transition-all duration-300"
+                className="h-full rounded-2xl bg-white p-5 md:p-8 border border-surface-200 shadow-sm hover:shadow-xl hover:border-forest-200/60 transition-all duration-300 flex flex-col sm:block"
               >
-                <div className="w-12 h-12 rounded-xl bg-forest-100 text-forest-700 flex items-center justify-center mb-6">
-                  <card.icon className="w-6 h-6" strokeWidth={2} />
+                <div className="flex sm:block items-start gap-4 sm:gap-0">
+                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-forest-100 text-forest-700 flex items-center justify-center shrink-0 mb-0 sm:mb-6">
+                    <card.icon className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg md:text-xl font-bold text-surface-900 mb-0 sm:mb-3">{card.title}</h3>
+                    <p className="text-surface-600 leading-relaxed text-sm md:text-base hidden md:block mt-3">{card.body}</p>
+                  </div>
                 </div>
-                <h3 className="text-xl font-bold text-surface-900 mb-3">{card.title}</h3>
-                <p className="text-surface-600 leading-relaxed">{card.body}</p>
               </motion.div>
             </ScrollReveal>
           ))}
