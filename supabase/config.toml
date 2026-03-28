@@ -1,0 +1,6 @@
+# Supabase CLI — https://supabase.com/docs/guides/cli/config
+# Run: supabase link --project-ref <ref>
+
+[functions.auth-send-email]
+# Called by Auth Send Email hook (signed with SEND_EMAIL_HOOK_SECRET), not end-user JWT
+verify_jwt = false

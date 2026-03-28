@@ -19,6 +19,7 @@ import {
 import { Button, Input, TextArea } from '@/components/ui';
 import { PublicNav, PublicFooter, ScrollReveal } from '@/components/public';
 import { supabase } from '@/lib/supabase';
+import { sendTemplatedEmail } from '@/lib/email';
 
 const SERVICE_OPTIONS = [
   { value: 'security_guards', label: 'Security Guards' },
@@ -94,6 +95,19 @@ export default function FountainSourceRequestPage() {
     if (error) {
       toast.error('Something went wrong. Please try again or call us directly.');
       return;
+    }
+
+    const serviceLabel =
+      SERVICE_OPTIONS.find((o) => o.value === data.service_type)?.label ?? data.service_type;
+    try {
+      await sendTemplatedEmail(data.email, 'security_service_request_received', {
+        recipientName: data.full_name.trim().split(/\s+/)[0],
+        serviceType: serviceLabel,
+        companyName: data.company_name,
+        dashboardUrl: typeof window !== 'undefined' ? window.location.origin : undefined,
+      });
+    } catch {
+      /* non-blocking — row is saved */
     }
 
     setSubmitted(true);
