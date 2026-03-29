@@ -17,6 +17,7 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null; user?: Profile | null }>;
   signInWithOtp: (phone: string) => Promise<{ error: string | null }>;
   verifyOtp: (phone: string, token: string) => Promise<{ error: string | null; user?: Profile | null }>;
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   fetchProfile: (userId: string) => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: string | null }>;
@@ -93,6 +94,15 @@ export const useAuthStore = create<AuthState>()(
           await get().fetchProfile(data.user.id);
         }
         return { error: null, user: get().user };
+      },
+
+      resetPassword: async (email) => {
+        const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${siteUrl}/reset-password`,
+        });
+        if (error) return { error: error.message };
+        return { error: null };
       },
 
       signOut: async () => {

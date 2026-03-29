@@ -6,6 +6,7 @@ import LandingPage from '@/pages/LandingPage';
 import {
   LoginPage,
   RegisterPage,
+  ResetPasswordPage,
   ProfileCompletionPage,
   UnauthorizedPage,
 } from '@/pages/auth';
@@ -100,6 +101,7 @@ export const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
   { path: '/login', element: <LoginPage /> },
   { path: '/register', element: <RegisterPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
 
   // Public pages
   { path: '/about', element: <AboutPage /> },

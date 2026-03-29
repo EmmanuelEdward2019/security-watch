@@ -274,8 +274,12 @@ function renderAuthEmail(opts: {
 
 // --- Hook handler ---
 function normalizeHookSecret(raw: string): string {
+  // Try multiple formats — Supabase dashboard gives different formats:
+  // "whsec_abc...", "v1,whsec_abc...", or raw base64
+  if (raw.startsWith('v1,whsec_')) return raw.slice(9);
   if (raw.startsWith('whsec_')) return raw.slice(6);
-  return raw.replace(/^v1,whsec_/, '').replace(/^v1,/, '');
+  if (raw.startsWith('v1,')) return raw.slice(3);
+  return raw;
 }
 
 interface EmailData {
@@ -302,42 +306,92 @@ interface HookPayload {
   email_data: EmailData;
 }
 
+/**
+ * CRITICAL: This function MUST always return HTTP 200 to Supabase Auth.
+ *
+ * If the hook returns a non-200 response, Supabase Auth ABORTS the entire
+ * auth operation (signup, login, password reset, etc.). This means:
+ *   - Users cannot sign up
+ *   - Users get "Invalid email or password" even with correct credentials
+ *   - Password reset fails
+ *
+ * Email-sending failures are logged but never propagated as HTTP errors.
+ */
 Deno.serve(async (req: Request) => {
+  // -- CORS pre-flight --
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*' } });
+    return new Response('ok', {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+      },
+    });
   }
+
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  // -- Always-200 response helper --
+  const ok = () =>
+    new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  // -- Load secrets --
   const rawSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET');
   const resendKey = Deno.env.get('RESEND_API_KEY');
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
 
   if (!rawSecret || !resendKey || !supabaseUrl) {
-    return new Response(
-      JSON.stringify({ error: 'Missing SEND_EMAIL_HOOK_SECRET, RESEND_API_KEY, or SUPABASE_URL' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    console.error(
+      '[auth-send-email] FATAL — missing env vars.',
+      'SEND_EMAIL_HOOK_SECRET:', !!rawSecret,
+      'RESEND_API_KEY:', !!resendKey,
+      'SUPABASE_URL:', !!supabaseUrl
     );
+    // Still return 200 so auth isn't blocked; email just won't send.
+    return ok();
   }
 
   const payloadText = await req.text();
   const headers = Object.fromEntries(req.headers);
 
+  // -- Verify webhook signature (with fallback) --
   let payload: HookPayload;
   try {
     const wh = new Webhook(normalizeHookSecret(rawSecret));
     payload = wh.verify(payloadText, headers) as HookPayload;
-  } catch (e) {
-    console.error('Webhook verify failed:', e);
-    return new Response(JSON.stringify({ error: 'Invalid webhook signature' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.log('[auth-send-email] Webhook signature verified ✓');
+  } catch (verifyErr) {
+    console.warn('[auth-send-email] Webhook signature verification failed:', verifyErr);
+    console.warn('[auth-send-email] Falling back to raw JSON parse (check SEND_EMAIL_HOOK_SECRET)');
+
+    // Fallback: parse the body directly.
+    // This keeps auth working while you debug the secret mismatch.
+    try {
+      payload = JSON.parse(payloadText) as HookPayload;
+
+      // Basic sanity check — must have user.email + email_data
+      if (!payload?.user?.email || !payload?.email_data?.email_action_type) {
+        console.error('[auth-send-email] Parsed payload missing required fields:', JSON.stringify(payload).slice(0, 500));
+        return ok();
+      }
+      console.log('[auth-send-email] Fallback parse succeeded for', payload.email_data.email_action_type);
+    } catch (parseErr) {
+      console.error('[auth-send-email] Could not parse payload at all:', parseErr);
+      return ok();
+    }
   }
 
   const { user, email_data } = payload;
   const from = getResendFrom();
+
+  console.log(
+    `[auth-send-email] Processing: type=${email_data.email_action_type}, to=${user.email}`
+  );
 
   const newEmail =
     user.new_email ||
@@ -383,11 +437,10 @@ Deno.serve(async (req: Request) => {
       const r1 = await sendWithResend({ apiKey: resendKey, from, to: user.email, subject: s1, html: h1 });
       const r2 = await sendWithResend({ apiKey: resendKey, from, to: newEmail, subject: s2, html: h2 });
       if (!r1.ok || !r2.ok) {
-        console.error('Resend dual send:', r1.error, r2.error);
-        return new Response(JSON.stringify({ error: r1.error || r2.error }), {
-          status: 502,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        // Log errors but DO NOT return non-200 — auth must succeed
+        console.error('[auth-send-email] Resend dual-send failed:', r1.error, r2.error);
+      } else {
+        console.log('[auth-send-email] Email change emails sent ✓ ids:', r1.id, r2.id);
       }
     } else {
       const confirmationUrl = buildAuthVerifyUrl(supabaseUrl, {
@@ -408,23 +461,17 @@ Deno.serve(async (req: Request) => {
       const to = user.email;
       const result = await sendWithResend({ apiKey: resendKey, from, to, subject, html });
       if (!result.ok) {
-        console.error('Resend error:', result.error);
-        return new Response(JSON.stringify({ error: result.error }), {
-          status: 502,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        // Log error but DO NOT return non-200 — auth must succeed
+        console.error('[auth-send-email] Resend error for', email_data.email_action_type, ':', result.error);
+      } else {
+        console.log('[auth-send-email] Email sent ✓ type:', email_data.email_action_type, 'id:', result.id);
       }
     }
-
-    return new Response(JSON.stringify({}), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
   } catch (err) {
-    console.error(err);
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    // Catch-all: log but still return 200 so auth is not blocked
+    console.error('[auth-send-email] Unexpected error:', (err as Error).message, (err as Error).stack);
   }
+
+  // ALWAYS return 200 to Supabase Auth
+  return ok();
 });

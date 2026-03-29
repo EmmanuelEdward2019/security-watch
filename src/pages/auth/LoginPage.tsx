@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
-import { Mail, Smartphone, ArrowRight, Eye, EyeOff, Lock } from 'lucide-react';
+import { Mail, Smartphone, ArrowRight, Eye, EyeOff, Lock, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/utils/cn';
@@ -34,10 +34,14 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
   const navigate = useNavigate();
   const signIn = useAuthStore((s) => s.signIn);
   const signInWithOtp = useAuthStore((s) => s.signInWithOtp);
   const verifyOtp = useAuthStore((s) => s.verifyOtp);
+  const resetPassword = useAuthStore((s) => s.resetPassword);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
   const authLoading = useAuthStore((s) => s.isLoading);
@@ -101,7 +105,93 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!forgotEmail.trim()) {
+      toast.error('Please enter your email address');
+      return;
+    }
+    setForgotLoading(true);
+    const { error } = await resetPassword(forgotEmail.trim());
+    setForgotLoading(false);
+    if (error) {
+      toast.error(error);
+    } else {
+      toast.success('Password reset email sent. Please check your inbox.');
+      setShowForgot(false);
+      setForgotEmail('');
+    }
+  };
+
   return (
+    <>
+    {/* Forgot Password Modal */}
+    <AnimatePresence>
+      {showForgot && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setShowForgot(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl border border-surface-200 p-8 w-full max-w-md"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-surface-900">Reset password</h2>
+              <button
+                type="button"
+                onClick={() => setShowForgot(false)}
+                className="p-1 rounded-lg hover:bg-surface-100 text-surface-400 hover:text-surface-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-surface-600 text-sm mb-6">
+              Enter the email address associated with your account and we'll send you a link to reset your password.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-surface-700 mb-1">Email address</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-400" />
+                <input
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()}
+                  placeholder="you@example.com"
+                  className="w-full pl-10 pr-4 py-3 border border-surface-300 rounded-lg focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <Button
+              type="button"
+              onClick={handleForgotPassword}
+              className="w-full bg-forest-600 hover:bg-forest-700 text-white py-3"
+              loading={forgotLoading}
+              icon={Mail}
+            >
+              Send reset link
+            </Button>
+            <p className="mt-4 text-center text-xs text-surface-500">
+              Remember your password?{' '}
+              <button
+                type="button"
+                onClick={() => setShowForgot(false)}
+                className="text-forest-600 font-medium hover:underline"
+              >
+                Back to sign in
+              </button>
+            </p>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
     <div className="min-h-screen bg-surface-50 flex">
       {/* Left - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-forest-600 flex-col justify-between p-12">
@@ -212,7 +302,11 @@ export default function LoginPage() {
                       <input type="checkbox" className="rounded border-surface-300 text-forest-600" />
                       Remember me
                     </label>
-                    <button type="button" className="text-forest-600 hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgot(true)}
+                      className="text-forest-600 hover:underline"
+                    >
                       Forgot password?
                     </button>
                   </div>
@@ -293,5 +387,6 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }
