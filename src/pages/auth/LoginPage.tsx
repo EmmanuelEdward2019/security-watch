@@ -5,10 +5,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
-import { Mail, Smartphone, ArrowRight, Eye, EyeOff, Lock, X } from 'lucide-react';
+import { Mail, ArrowRight, Eye, EyeOff, Lock, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
-import { cn } from '@/utils/cn';
+
 import { ROLE_HOME } from '@/lib/rbac';
 import type { UserRole } from '@/types';
 
@@ -21,26 +21,17 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-const otpSchema = z.object({
-  phone: z.string().min(10, 'Please enter a valid phone number'),
-  otp: z.string().optional(),
-});
 
 type LoginForm = z.infer<typeof loginSchema>;
-type OTPForm = z.infer<typeof otpSchema>;
 
 export default function LoginPage() {
-  const [isPhoneMode, setIsPhoneMode] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
   const navigate = useNavigate();
   const signIn = useAuthStore((s) => s.signIn);
-  const signInWithOtp = useAuthStore((s) => s.signInWithOtp);
-  const verifyOtp = useAuthStore((s) => s.verifyOtp);
   const resetPassword = useAuthStore((s) => s.resetPassword);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
@@ -59,12 +50,6 @@ export default function LoginPage() {
     formState: { errors: emailErrors },
   } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
 
-  const {
-    register: registerPhone,
-    handleSubmit: handlePhoneSubmit,
-    formState: { errors: phoneErrors },
-    getValues: getPhoneValues,
-  } = useForm<OTPForm>({ resolver: zodResolver(otpSchema) });
 
   const onEmailSubmit = async (data: LoginForm) => {
     setIsLoading(true);
@@ -79,31 +64,7 @@ export default function LoginPage() {
     }
   };
 
-  const onSendOtp = async (data: OTPForm) => {
-    setIsLoading(true);
-    const result = await signInWithOtp(data.phone);
-    setIsLoading(false);
-    if (result.error) {
-      toast.error('Could not send code. Please try again.');
-    } else {
-      setOtpSent(true);
-      toast.success('Check your phone for the code.');
-    }
-  };
 
-  const onVerifyOtp = async (data: OTPForm) => {
-    if (!data.otp) return;
-    setIsLoading(true);
-    const result = await verifyOtp(getPhoneValues('phone'), data.otp);
-    setIsLoading(false);
-    if (result.error) {
-      toast.error('Invalid code. Please try again.');
-    } else {
-      toast.success('Welcome back!');
-      const path = getDashboardPath(result.user?.role);
-      navigate(path, { replace: true });
-    }
-  };
 
   const handleForgotPassword = async () => {
     if (!forgotEmail.trim()) {
@@ -227,36 +188,9 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold text-surface-900 mb-2">Sign in</h1>
             <p className="text-surface-600 mb-6">Welcome back. Enter your details to continue.</p>
 
-            <div className="flex p-1 bg-surface-100 rounded-lg mb-6">
-              <button
-                type="button"
-                onClick={() => setIsPhoneMode(false)}
-                className={cn(
-                  'flex-1 py-2 text-sm font-medium rounded-md transition-colors',
-                  !isPhoneMode ? 'bg-white text-surface-900 shadow' : 'text-surface-600'
-                )}
-              >
-                Email
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsPhoneMode(true)}
-                className={cn(
-                  'flex-1 py-2 text-sm font-medium rounded-md transition-colors',
-                  isPhoneMode ? 'bg-white text-surface-900 shadow' : 'text-surface-600'
-                )}
-              >
-                Phone
-              </button>
-            </div>
 
-            <AnimatePresence mode="wait">
-              {!isPhoneMode ? (
-                <motion.form
-                  key="email"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
+
+            <form
                   onSubmit={handleEmailSubmit(onEmailSubmit)}
                   className="space-y-4"
                 >
@@ -318,64 +252,7 @@ export default function LoginPage() {
                   >
                     Sign in
                   </Button>
-                </motion.form>
-              ) : (
-                <motion.form
-                  key="phone"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onSubmit={handlePhoneSubmit(otpSent ? onVerifyOtp : onSendOtp)}
-                  className="space-y-4"
-                >
-                  <div>
-                    <label className="block text-sm font-medium text-surface-700 mb-1">Phone number</label>
-                    <div className="relative">
-                      <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-400" />
-                      <input
-                        {...registerPhone('phone')}
-                        type="tel"
-                        placeholder="+234 800 000 0000"
-                        disabled={otpSent}
-                        className="w-full pl-10 pr-4 py-3 border border-surface-300 rounded-lg focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none disabled:opacity-60"
-                      />
-                    </div>
-                    {phoneErrors.phone && (
-                      <p className="mt-1 text-sm text-accent-600">{phoneErrors.phone.message}</p>
-                    )}
-                  </div>
-                  {otpSent && (
-                    <div>
-                      <label className="block text-sm font-medium text-surface-700 mb-1">Verification code</label>
-                      <input
-                        {...registerPhone('otp')}
-                        type="text"
-                        placeholder="Enter 6-digit code"
-                        maxLength={6}
-                        className="w-full px-4 py-3 border border-surface-300 rounded-lg focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none text-center tracking-widest"
-                      />
-                    </div>
-                  )}
-                  <Button
-                    type="submit"
-                    className="w-full bg-forest-600 hover:bg-forest-700 text-white py-3"
-                    loading={isLoading}
-                    icon={otpSent ? ArrowRight : Smartphone}
-                  >
-                    {otpSent ? 'Verify' : 'Send code'}
-                  </Button>
-                  {otpSent && (
-                    <button
-                      type="button"
-                      onClick={() => setOtpSent(false)}
-                      className="w-full text-sm text-surface-500 hover:text-surface-700 mt-2"
-                    >
-                      Use a different number
-                    </button>
-                  )}
-                </motion.form>
-              )}
-            </AnimatePresence>
+                </form>
 
             <p className="mt-6 text-center text-sm text-surface-600">
               Don't have an account?{' '}

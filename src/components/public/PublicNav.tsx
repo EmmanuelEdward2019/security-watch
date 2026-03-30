@@ -256,9 +256,6 @@ export function PublicNav() {
                 >
                   <UserPlus className="w-4 h-4" />
                   Get started
-                  <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-white/20 rounded-md">
-                    Free
-                  </span>
                 </Link>
               </div>
             </div>
