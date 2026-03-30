@@ -140,7 +140,7 @@ function buildAuthVerifyUrl(
 ): string {
   const base = `${supabaseUrl.replace(/\/$/, '')}/auth/v1/verify`;
   const params = new URLSearchParams({
-    token: emailData.token_hash,
+    token_hash: emailData.token_hash,
     type: emailData.email_action_type,
     redirect_to: emailData.redirect_to || '',
   });
