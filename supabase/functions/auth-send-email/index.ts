@@ -482,15 +482,26 @@ Deno.serve(async (req: Request) => {
           `[auth-send-email] Resend FAILED for type=${email_data.email_action_type}, from=${from}, to=${to}:`,
           result.error
         );
+        return new Response(
+          JSON.stringify({ error: `Email Delivery Failed. Resend API says: ${result.error}` }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
       } else {
         console.log('[auth-send-email] Email sent ✓ type:', email_data.email_action_type, 'to:', to, 'id:', result.id);
+        return new Response(
+          JSON.stringify({ success: true, resend_id: result.id }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
       }
     }
   } catch (err) {
-    // Catch-all: log but still return 200 so auth is not blocked
     console.error('[auth-send-email] Unexpected error:', (err as Error).message, (err as Error).stack);
+    return new Response(
+      JSON.stringify({ error: `Webhook Error: ${(err as Error).message}` }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
   }
 
-  // ALWAYS return 200 to Supabase Auth
+  // Fallback (e.g. for non-email events)
   return ok();
 });

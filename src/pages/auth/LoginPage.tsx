@@ -56,7 +56,7 @@ export default function LoginPage() {
     const result = await signIn(data.email, data.password);
     setIsLoading(false);
     if (result.error) {
-      toast.error('Invalid email or password. Please try again.');
+      toast.error(result.error);
     } else {
       toast.success('Welcome back!');
       const path = getDashboardPath(result.user?.role);
