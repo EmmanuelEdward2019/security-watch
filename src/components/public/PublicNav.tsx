@@ -135,18 +135,15 @@ export function PublicNav() {
           {/* Desktop Auth Buttons */}
           <div className="hidden lg:flex items-center gap-3">
             <Link to="/login">
-              <button className="group relative inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-forest-700 rounded-xl border-2 border-forest-200 bg-white hover:bg-forest-50 hover:border-forest-300 transition-all duration-200 shadow-sm hover:shadow-md">
+              <button className="group relative inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-forest-700 rounded-xl border-2 border-forest-200 bg-white hover:bg-forest-50 hover:border-forest-300 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap">
                 <LogIn className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
                 Sign in
               </button>
             </Link>
             <Link to="/register">
-              <button className="group relative inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-forest-600 to-forest-700 hover:from-forest-700 hover:to-forest-800 transition-all duration-200 shadow-md hover:shadow-lg hover:shadow-forest-500/25">
+              <button className="group relative inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-forest-600 to-forest-700 hover:from-forest-700 hover:to-forest-800 transition-all duration-200 shadow-md hover:shadow-lg hover:shadow-forest-500/25 whitespace-nowrap">
                 <UserPlus className="w-4 h-4 transition-transform group-hover:scale-110" />
                 Get started
-                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-white/20 rounded-md">
-                  Free
-                </span>
               </button>
             </Link>
           </div>
