@@ -369,44 +369,44 @@ Deno.serve(async (req: Request) => {
     console.warn('[auth-send-email] Webhook signature verification failed:', verifyErr);
     console.warn('[auth-send-email] Falling back to raw JSON parse (check SEND_EMAIL_HOOK_SECRET)');
 
-    // Fallback: parse the body directly.
-    // This keeps auth working while you debug the secret mismatch.
     try {
       payload = JSON.parse(payloadText) as HookPayload;
-
-      // Basic sanity check — must have user.email + email_data
-      if (!payload?.user?.email || !payload?.email_data?.email_action_type) {
-        console.error('[auth-send-email] Parsed payload missing required fields:', JSON.stringify(payload).slice(0, 500));
-        return ok();
-      }
-      console.log('[auth-send-email] Fallback parse succeeded for', payload.email_data.email_action_type);
     } catch (parseErr) {
       console.error('[auth-send-email] Could not parse payload at all:', parseErr);
       return ok();
     }
   }
 
-  const { user, email_data } = payload;
-  const from = getResendFrom();
-
-  // Warn if using test sender — emails will only reach the Resend account owner
-  if (from.includes('onboarding@resend.dev') || from.includes('resend.dev')) {
-    console.warn(
-      '[auth-send-email] ⚠️ Using Resend test sender (onboarding@resend.dev). ' +
-      'Emails will ONLY be delivered to the email address on the Resend account. ' +
-      'Set RESEND_FROM_EMAIL to a verified domain sender for production.'
-    );
-  }
-
-  console.log(
-    `[auth-send-email] Processing: type=${email_data.email_action_type}, to=${user.email}, from=${from}, redirect_to=${email_data.redirect_to || '(empty)'}, site_url=${email_data.site_url || '(empty)'}`
-  );
-
-  const newEmail =
-    user.new_email ||
-    (typeof user.user_metadata?.new_email === 'string' ? user.user_metadata.new_email : undefined);
-
+  // Safety first: everything else inside try/catch so we NEVER return 500
   try {
+    const { user, email_data } = payload;
+    
+    // If this is triggered by a non-email hook accidentally (like Custom Access Token during login),
+    // email_data or user might be missing. Just return 200 safely to not block the request.
+    if (!user?.email || !email_data?.email_action_type) {
+      console.warn('[auth-send-email] Missing user.email or email_data. Hook might have been triggered by a non-email event (e.g. login). Ignoring safely.');
+      return ok();
+    }
+
+    const from = getResendFrom();
+
+    // Warn if using test sender — emails will only reach the Resend account owner
+    if (from.includes('onboarding@resend.dev') || from.includes('resend.dev')) {
+      console.warn(
+        '[auth-send-email] ⚠️ Using Resend test sender (onboarding@resend.dev). ' +
+        'Emails will ONLY be delivered to the email address on the Resend account. ' +
+        'Set RESEND_FROM_EMAIL to a verified domain sender for production.'
+      );
+    }
+
+    console.log(
+      `[auth-send-email] Processing: type=${email_data.email_action_type}, to=${user.email}, from=${from}, redirect_to=${email_data.redirect_to || '(empty)'}, site_url=${email_data.site_url || '(empty)'}`
+    );
+
+    const newEmail =
+      user.new_email ||
+      (typeof user.user_metadata?.new_email === 'string' ? user.user_metadata.new_email : undefined);
+
     if (
       email_data.email_action_type === 'email_change' &&
       newEmail &&
@@ -446,16 +446,24 @@ Deno.serve(async (req: Request) => {
       const r1 = await sendWithResend({ apiKey: resendKey, from, to: user.email, subject: s1, html: h1 });
       const r2 = await sendWithResend({ apiKey: resendKey, from, to: newEmail, subject: s2, html: h2 });
       if (!r1.ok || !r2.ok) {
-        // Log errors but DO NOT return non-200 — auth must succeed
         console.error('[auth-send-email] Resend dual-send failed:', r1.error, r2.error);
       } else {
         console.log('[auth-send-email] Email change emails sent ✓ ids:', r1.id, r2.id);
       }
     } else {
+      let finalRedirectTo = email_data.redirect_to || email_data.site_url || '/';
+      
+      // Force reset password to go to the correct page, even if Supabase stripped the URL
+      // due to URL allow-list restrictions in the dashboard.
+      if (email_data.email_action_type === 'recovery') {
+         const siteUrl = email_data.site_url || supabaseUrl;
+         finalRedirectTo = `${siteUrl.replace(/\/$/, '')}/reset-password`;
+      }
+
       const confirmationUrl = buildAuthVerifyUrl(supabaseUrl, {
         token_hash: email_data.token_hash,
         email_action_type: email_data.email_action_type,
-        redirect_to: email_data.redirect_to || email_data.site_url || '/',
+        redirect_to: finalRedirectTo,
       });
 
       const { subject, html } = renderAuthEmail({
@@ -470,7 +478,6 @@ Deno.serve(async (req: Request) => {
       const to = user.email;
       const result = await sendWithResend({ apiKey: resendKey, from, to, subject, html });
       if (!result.ok) {
-        // Log error but DO NOT return non-200 — auth must succeed
         console.error(
           `[auth-send-email] Resend FAILED for type=${email_data.email_action_type}, from=${from}, to=${to}:`,
           result.error
