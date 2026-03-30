@@ -389,8 +389,17 @@ Deno.serve(async (req: Request) => {
   const { user, email_data } = payload;
   const from = getResendFrom();
 
+  // Warn if using test sender — emails will only reach the Resend account owner
+  if (from.includes('onboarding@resend.dev') || from.includes('resend.dev')) {
+    console.warn(
+      '[auth-send-email] ⚠️ Using Resend test sender (onboarding@resend.dev). ' +
+      'Emails will ONLY be delivered to the email address on the Resend account. ' +
+      'Set RESEND_FROM_EMAIL to a verified domain sender for production.'
+    );
+  }
+
   console.log(
-    `[auth-send-email] Processing: type=${email_data.email_action_type}, to=${user.email}`
+    `[auth-send-email] Processing: type=${email_data.email_action_type}, to=${user.email}, from=${from}, redirect_to=${email_data.redirect_to || '(empty)'}, site_url=${email_data.site_url || '(empty)'}`
   );
 
   const newEmail =
@@ -462,9 +471,12 @@ Deno.serve(async (req: Request) => {
       const result = await sendWithResend({ apiKey: resendKey, from, to, subject, html });
       if (!result.ok) {
         // Log error but DO NOT return non-200 — auth must succeed
-        console.error('[auth-send-email] Resend error for', email_data.email_action_type, ':', result.error);
+        console.error(
+          `[auth-send-email] Resend FAILED for type=${email_data.email_action_type}, from=${from}, to=${to}:`,
+          result.error
+        );
       } else {
-        console.log('[auth-send-email] Email sent ✓ type:', email_data.email_action_type, 'id:', result.id);
+        console.log('[auth-send-email] Email sent ✓ type:', email_data.email_action_type, 'to:', to, 'id:', result.id);
       }
     }
   } catch (err) {

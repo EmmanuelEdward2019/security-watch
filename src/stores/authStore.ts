@@ -37,6 +37,7 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (isLoading) => set({ isLoading }),
 
       signUp: async (email, password, role, fullName) => {
+        const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -45,6 +46,7 @@ export const useAuthStore = create<AuthState>()(
               full_name: fullName,
               role,
             },
+            emailRedirectTo: `${siteUrl}/login`,
           },
         });
         if (error) return { error: error.message };
