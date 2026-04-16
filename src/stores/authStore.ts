@@ -211,7 +211,7 @@ export const useAuthStore = create<AuthState>()(
           set({ isLoading: false });
         }
 
-        supabase.auth.onAuthStateChange(async (_event, session) => {
+        supabase.auth.onAuthStateChange((_event, session) => {
           if (session?.user) {
             set({
               session: {
@@ -219,7 +219,10 @@ export const useAuthStore = create<AuthState>()(
                 refresh_token: session.refresh_token,
               },
             });
-            await get().fetchProfile(session.user.id);
+            // Detach from current execution to prevent Supabase internal session Mutex deadlock
+            setTimeout(() => {
+              get().fetchProfile(session.user.id);
+            }, 0);
           } else {
             set({ user: null, session: null, isAuthenticated: false });
           }
