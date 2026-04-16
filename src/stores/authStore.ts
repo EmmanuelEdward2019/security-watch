@@ -58,7 +58,6 @@ export const useAuthStore = create<AuthState>()(
               access_token: data.session.access_token,
               refresh_token: data.session.refresh_token,
             },
-            isAuthenticated: true,
           });
           await get().fetchProfile(data.user.id);
         }
@@ -75,7 +74,6 @@ export const useAuthStore = create<AuthState>()(
             access_token: data.session.access_token,
             refresh_token: data.session.refresh_token,
           },
-          isAuthenticated: true,
         });
 
         await get().fetchProfile(data.user.id);
@@ -92,7 +90,6 @@ export const useAuthStore = create<AuthState>()(
         const { data, error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
         if (error) return { error: error.message };
         if (data.user) {
-          set({ isAuthenticated: true });
           await get().fetchProfile(data.user.id);
         }
         return { error: null, user: get().user };
@@ -124,16 +121,23 @@ export const useAuthStore = create<AuthState>()(
             .eq('user_id', userId)
             .single();
 
+          // Abort if the user logged out while we were fetching
+          if (!get().session) return;
+
           if (!error && data) {
             set({ user: data as Profile, isAuthenticated: true });
           } else {
             const { data: authData } = await supabase.auth.getUser();
-            const meta = authData?.user?.user_metadata;
+            if (!authData?.user) {
+              set({ user: null, session: null, isAuthenticated: false });
+              return;
+            }
+            const meta = authData.user.user_metadata;
             set({
               user: {
                 id: userId,
                 user_id: userId,
-                email: meta?.email || authData?.user?.email || '',
+                email: meta?.email || authData.user.email || '',
                 full_name: meta?.full_name || '',
                 role: (meta?.role as UserRole) || 'complainant',
                 kyc_status: 'pending' as const,
@@ -144,7 +148,9 @@ export const useAuthStore = create<AuthState>()(
             });
           }
         } catch {
-          set({ isAuthenticated: true });
+          if (get().session) {
+            set({ isAuthenticated: true });
+          }
         }
       },
 
@@ -173,7 +179,6 @@ export const useAuthStore = create<AuthState>()(
                 access_token: session.access_token,
                 refresh_token: session.refresh_token,
               },
-              isAuthenticated: true,
             });
             await get().fetchProfile(session.user.id);
           }
@@ -188,7 +193,6 @@ export const useAuthStore = create<AuthState>()(
                 access_token: session.access_token,
                 refresh_token: session.refresh_token,
               },
-              isAuthenticated: true,
             });
             await get().fetchProfile(session.user.id);
           } else {

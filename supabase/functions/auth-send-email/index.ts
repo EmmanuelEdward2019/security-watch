@@ -104,6 +104,7 @@ async function sendWithResend(opts: {
   subject: string;
   html: string;
 }): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const textFallback = opts.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -113,8 +114,10 @@ async function sendWithResend(opts: {
     body: JSON.stringify({
       from: opts.from,
       to: [opts.to],
+      reply_to: getResendFrom(),
       subject: opts.subject,
       html: opts.html,
+      text: textFallback,
     }),
   });
 
