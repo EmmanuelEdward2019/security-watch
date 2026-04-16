@@ -37,47 +37,57 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (isLoading) => set({ isLoading }),
 
       signUp: async (email, password, role, fullName) => {
-        const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName,
-              role,
-            },
-            emailRedirectTo: `${siteUrl}/login`,
-          },
-        });
-        if (error) return { error: error.message };
-        if (!data.user) return { error: 'Signup failed' };
-
-        if (data.session) {
-          set({
-            session: {
-              access_token: data.session.access_token,
-              refresh_token: data.session.refresh_token,
+        try {
+          const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: fullName,
+                role,
+              },
+              emailRedirectTo: `${siteUrl}/login`,
             },
           });
-          await get().fetchProfile(data.user.id);
+          if (error) return { error: error.message };
+          if (!data.user) return { error: 'Signup failed' };
+
+          if (data.session) {
+            set({
+              session: {
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+              },
+            });
+            await get().fetchProfile(data.user.id);
+          }
+          return { error: null };
+        } catch (e: any) {
+          return { error: e?.message || 'An unexpected error occurred during signup' };
         }
-        return { error: null };
       },
 
       signIn: async (email, password) => {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) return { error: error.message };
-        if (!data.user) return { error: 'Login failed' };
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) return { error: error.message };
+          if (!data.user) return { error: 'Login failed' };
 
-        set({
-          session: {
-            access_token: data.session.access_token,
-            refresh_token: data.session.refresh_token,
-          },
-        });
+          if (data.session) {
+            set({
+              session: {
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+              },
+            });
+          }
 
-        await get().fetchProfile(data.user.id);
-        return { error: null, user: get().user };
+          await get().fetchProfile(data.user.id);
+          return { error: null, user: get().user };
+        } catch (e: any) {
+          return { error: e?.message || 'An unexpected error occurred during login' };
+        }
       },
 
       signInWithOtp: async (phone) => {
