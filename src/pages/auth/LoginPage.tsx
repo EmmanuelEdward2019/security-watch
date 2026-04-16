@@ -27,6 +27,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
@@ -48,11 +49,27 @@ export default function LoginPage() {
     register: registerEmail,
     handleSubmit: handleEmailSubmit,
     formState: { errors: emailErrors },
+    setValue,
   } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('tsw-remember-email');
+    if (savedEmail) {
+      setValue('email', savedEmail);
+      setRememberMe(true);
+    }
+  }, [setValue]);
 
 
   const onEmailSubmit = async (data: LoginForm) => {
     setIsLoading(true);
+
+    if (rememberMe) {
+      localStorage.setItem('tsw-remember-email', data.email);
+    } else {
+      localStorage.removeItem('tsw-remember-email');
+    }
+
     const result = await signIn(data.email, data.password);
     setIsLoading(false);
     if (result.error) {
@@ -201,6 +218,7 @@ export default function LoginPage() {
                       <input
                         {...registerEmail('email')}
                         type="email"
+                        autoComplete="username"
                         placeholder="you@example.com"
                         className="w-full pl-10 pr-4 py-3 border border-surface-300 rounded-lg focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none"
                       />
@@ -216,6 +234,7 @@ export default function LoginPage() {
                       <input
                         {...registerEmail('password')}
                         type={showPassword ? 'text' : 'password'}
+                        autoComplete="current-password"
                         placeholder="••••••••"
                         className="w-full pl-10 pr-12 py-3 border border-surface-300 rounded-lg focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none"
                       />
@@ -233,7 +252,12 @@ export default function LoginPage() {
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="rounded border-surface-300 text-forest-600" />
+                      <input 
+                        type="checkbox" 
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="rounded border-surface-300 text-forest-600" 
+                      />
                       Remember me
                     </label>
                     <button

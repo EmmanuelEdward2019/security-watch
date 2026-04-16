@@ -214,6 +214,26 @@ export const useAuthStore = create<AuthState>()(
             set({ user: null, session: null, isAuthenticated: false });
           }
         });
+
+        if (typeof window !== 'undefined') {
+          window.addEventListener('storage', (e) => {
+            if (e.key && e.key.startsWith('sb-') && e.key.endsWith('-auth-token')) {
+              if (!e.newValue) {
+                set({ user: null, session: null, isAuthenticated: false });
+              }
+            }
+            if (e.key === 'tsw-auth') {
+              try {
+                const newState = JSON.parse(e.newValue || '{}');
+                if (!newState?.state?.session) {
+                  set({ user: null, session: null, isAuthenticated: false });
+                }
+              } catch {
+                // Ignore parse errors
+              }
+            }
+          });
+        }
       },
     }),
     {
