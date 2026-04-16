@@ -107,9 +107,24 @@ export const useAuthStore = create<AuthState>()(
       signOut: async () => {
         set({ user: null, session: null, isAuthenticated: false });
         try {
+          // Attempt graceful sign out
           await supabase.auth.signOut();
-        } catch {
-          // State already cleared above
+        } catch (e) {
+          console.error('Sign out error:', e);
+        } finally {
+          // Force clear local storage to prevent auto-login loops if network fails
+          try {
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                keysToRemove.push(key);
+              }
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+          } catch (storageErr) {
+            console.error('Local storage cleanup error:', storageErr);
+          }
         }
       },
 
