@@ -191,7 +191,7 @@ export function VerifyOtpPage() {
             <MailCheck size={32} className="text-white" />
           </div>
           <h2 className="text-3xl font-bold text-white mb-4">
-            {mode === 'signup' ? 'One last step' : 'Prove it's you'}
+            {mode === 'signup' ? 'One last step' : "Prove it's you"}
           </h2>
           <p className="text-forest-100 max-w-sm">
             {mode === 'signup'
