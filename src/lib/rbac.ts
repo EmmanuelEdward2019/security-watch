@@ -28,7 +28,8 @@ const ROUTE_PERMISSIONS: { path: string; roles: UserRole[]; exact?: boolean }[] 
   { path: '/app/notifications', roles: ['complainant', 'investigator', 'lawyer', 'medical_expert', 'witness', 'landlord', 'tenant', 'media_agent', 'admin'] },
   { path: '/app/profile', roles: ['complainant', 'investigator', 'lawyer', 'medical_expert', 'witness', 'landlord', 'tenant', 'media_agent', 'admin'] },
   { path: '/app/settings', roles: ['complainant', 'investigator', 'lawyer', 'medical_expert', 'witness', 'landlord', 'tenant', 'media_agent', 'admin'] },
-  { path: '/app/payments', roles: ['complainant', 'investigator', 'lawyer', 'medical_expert', 'witness', 'landlord', 'tenant', 'media_agent', 'admin'] },
+  // Only payers can access the generic payment page; payees have /app/earnings instead
+  { path: '/app/payments', roles: ['complainant', 'witness', 'landlord', 'tenant'] },
 
   // ── Investigative Services ────────────────────────────────────
   { path: '/app/cases/new', roles: ['complainant'], exact: true },

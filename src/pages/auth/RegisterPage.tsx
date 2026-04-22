@@ -101,14 +101,9 @@ export function RegisterPage() {
       toast.error(error);
       return;
     }
-    const { isAuthenticated } = useAuthStore.getState();
-    if (isAuthenticated) {
-      toast.success('Account created! Complete your profile.');
-      navigate('/profile/complete');
-    } else {
-      toast.success('Account created! Please check your email to confirm, then sign in.');
-      navigate('/login');
-    }
+    // Always go to OTP verification page — user must verify email before accessing dashboard
+    toast.success('Account created! Check your email for your 6-digit verification code.');
+    navigate(`/verify-otp?email=${encodeURIComponent(step2Data.email)}&mode=signup`);
   };
 
   const roles = (Object.entries(USER_ROLE_LABELS) as [UserRole, string][]).filter(

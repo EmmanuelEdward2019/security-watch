@@ -19,6 +19,7 @@ interface AuthState {
   verifyOtp: (phone: string, token: string) => Promise<{ error: string | null; user?: Profile | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<{ error: string | null }>;
   fetchProfile: (userId: string) => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: string | null }>;
   initialize: () => Promise<void>;
@@ -112,6 +113,41 @@ export const useAuthStore = create<AuthState>()(
         });
         if (error) return { error: error.message };
         return { error: null };
+      },
+
+      deleteAccount: async () => {
+        const user = get().user;
+        if (!user) return { error: 'Not authenticated' };
+        try {
+          // Insert a deletion request record so admins can process it
+          const { error: reqErr } = await supabase
+            .from('account_deletion_requests')
+            .insert({
+              user_id: user.user_id,
+              email: user.email,
+              full_name: user.full_name,
+              requested_at: new Date().toISOString(),
+              status: 'pending',
+            });
+
+          if (reqErr) {
+            // Table may not exist yet — fall back to a notification to admin
+            await supabase.from('notifications').insert({
+              user_id: user.user_id,
+              title: 'Account Deletion Requested',
+              message: `User ${user.email} has requested account deletion. Please process via admin panel.`,
+              type: 'warning',
+              read: false,
+              created_at: new Date().toISOString(),
+            });
+          }
+
+          // Sign out immediately so user can't continue using the account
+          await get().signOut();
+          return { error: null };
+        } catch (e: unknown) {
+          return { error: e instanceof Error ? e.message : 'Failed to submit deletion request' };
+        }
       },
 
       signOut: async () => {

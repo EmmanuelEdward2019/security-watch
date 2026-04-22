@@ -110,3 +110,42 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ── Dark mode: override surface palette ─────────────────────────────────── */
+html.dark {
+  color-scheme: dark;
+
+  --color-surface-0:   #09090b;
+  --color-surface-50:  #111113;
+  --color-surface-100: #1c1c21;
+  --color-surface-200: #26262e;
+  --color-surface-300: #3a3a45;
+  --color-surface-400: #52525b;
+  --color-surface-500: #71717a;
+  --color-surface-600: #a1a1aa;
+  --color-surface-700: #d4d4d8;
+  --color-surface-800: #e4e4e7;
+  --color-surface-900: #f4f4f5;
+}
+
+html.dark body {
+  background-color: var(--color-surface-50);
+  color: var(--color-surface-900);
+}
+
+html.dark .bg-white {
+  background-color: var(--color-surface-100) !important;
+}
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: var(--color-surface-100);
+  color: var(--color-surface-900);
+  border-color: var(--color-surface-300);
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: var(--color-surface-500);
+}

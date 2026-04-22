@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { Mail, ArrowRight, Eye, EyeOff, Lock, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
-
+import { supabase } from '@/lib/supabase';
 import { ROLE_HOME } from '@/lib/rbac';
 import type { UserRole } from '@/types';
 
@@ -89,15 +89,25 @@ export default function LoginPage() {
       return;
     }
     setForgotLoading(true);
-    const { error } = await resetPassword(forgotEmail.trim());
+    // Send OTP via magic-link flow (shouldCreateUser: false ensures no new account is created)
+    const { error } = await supabase.auth.signInWithOtp({
+      email: forgotEmail.trim(),
+      options: { shouldCreateUser: false },
+    });
     setForgotLoading(false);
     if (error) {
-      toast.error(error);
-    } else {
-      toast.success('Password reset email sent. Please check your inbox.');
-      setShowForgot(false);
-      setForgotEmail('');
+      // Common error: user not found — show a generic message to prevent email enumeration
+      toast.error(
+        error.message.includes('not found') || error.message.includes('Invalid')
+          ? 'If that email is registered, a reset code has been sent.'
+          : error.message
+      );
+      return;
     }
+    setShowForgot(false);
+    setForgotEmail('');
+    toast.success('Check your email for a 6-digit reset code.');
+    navigate(`/verify-otp?email=${encodeURIComponent(forgotEmail.trim())}&mode=recovery`);
   };
 
   return (
@@ -130,7 +140,7 @@ export default function LoginPage() {
               </button>
             </div>
             <p className="text-surface-600 text-sm mb-6">
-              Enter the email address associated with your account and we'll send you a link to reset your password.
+              Enter the email address associated with your account and we'll send you a 6-digit reset code.
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-surface-700 mb-1">Email address</label>
@@ -154,7 +164,7 @@ export default function LoginPage() {
               loading={forgotLoading}
               icon={Mail}
             >
-              Send reset link
+              Send reset code
             </Button>
             <p className="mt-4 text-center text-xs text-surface-500">
               Remember your password?{' '}

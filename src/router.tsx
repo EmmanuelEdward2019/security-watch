@@ -7,6 +7,7 @@ import {
   LoginPage,
   RegisterPage,
   ResetPasswordPage,
+  VerifyOtpPage,
   ProfileCompletionPage,
   UnauthorizedPage,
 } from '@/pages/auth';
@@ -101,6 +102,7 @@ export const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
   { path: '/login', element: <LoginPage /> },
   { path: '/register', element: <RegisterPage /> },
+  { path: '/verify-otp', element: <VerifyOtpPage /> },
   { path: '/reset-password', element: <ResetPasswordPage /> },
 
   // Public pages

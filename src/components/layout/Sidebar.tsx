@@ -62,14 +62,39 @@ const coreSection: NavSection = {
   ],
 };
 
-const accountSection: NavSection = {
+/** Account section for roles that PAY (complainant, tenant, landlord, witness) */
+const accountSectionPayer: NavSection = {
   title: 'Account',
   items: [
     { to: '/app/payments', label: 'Payments', icon: CreditCard },
+    { to: '/app/payments/history', label: 'Payment History', icon: FileText },
     { to: '/app/profile', label: 'Profile', icon: User },
     { to: '/app/settings', label: 'Settings', icon: Settings },
   ],
 };
+
+/** Account section for service-providers (investigator, lawyer, medical_expert, media_agent) */
+const accountSectionPayee: NavSection = {
+  title: 'Account',
+  items: [
+    { to: '/app/profile', label: 'Profile', icon: User },
+    { to: '/app/settings', label: 'Settings', icon: Settings },
+  ],
+};
+
+/** Account section for admin (no generic payments tab — uses /app/admin/payments) */
+const accountSectionAdmin: NavSection = {
+  title: 'Account',
+  items: [
+    { to: '/app/profile', label: 'Profile', icon: User },
+    { to: '/app/settings', label: 'Settings', icon: Settings },
+  ],
+};
+
+/** Roles that are payers (they make payments for services) */
+const PAYER_ROLES: UserRole[] = ['complainant', 'tenant', 'landlord', 'witness'];
+/** Roles that are payees (they receive earnings, never the generic payments tab) */
+const PAYEE_ROLES: UserRole[] = ['investigator', 'lawyer', 'medical_expert', 'media_agent'];
 
 const roleNavSections: Record<UserRole, NavSection[]> = {
   complainant: [
@@ -230,6 +255,12 @@ export function Sidebar({
 }: SidebarProps) {
   const location = useLocation();
   const roleSections = roleNavSections[userRole] ?? [];
+  const accountSection =
+    userRole === 'admin'
+      ? accountSectionAdmin
+      : PAYEE_ROLES.includes(userRole)
+      ? accountSectionPayee
+      : accountSectionPayer;
   const allSections = [coreSection, ...roleSections, accountSection];
 
   const isActive = (path: string) => {

@@ -11,6 +11,20 @@
   </head>
   <body class="antialiased">
     <div id="root"></div>
+    <!-- Paystack inline payment SDK -->
+    <script src="https://js.paystack.co/v1/inline.js"></script>
+    <!-- Dark mode: apply saved theme before React hydrates to prevent flash -->
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem('tsw-theme') || 'system';
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (theme === 'dark' || (theme === 'system' && prefersDark)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
