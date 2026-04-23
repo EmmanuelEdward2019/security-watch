@@ -33,7 +33,6 @@ export default function LoginPage() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const navigate = useNavigate();
   const signIn = useAuthStore((s) => s.signIn);
-  const resetPassword = useAuthStore((s) => s.resetPassword);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
   const authLoading = useAuthStore((s) => s.isLoading);

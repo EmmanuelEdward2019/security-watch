@@ -91,8 +91,6 @@ const accountSectionAdmin: NavSection = {
   ],
 };
 
-/** Roles that are payers (they make payments for services) */
-const PAYER_ROLES: UserRole[] = ['complainant', 'tenant', 'landlord', 'witness'];
 /** Roles that are payees (they receive earnings, never the generic payments tab) */
 const PAYEE_ROLES: UserRole[] = ['investigator', 'lawyer', 'medical_expert', 'media_agent'];
 
