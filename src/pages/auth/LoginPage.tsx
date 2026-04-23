@@ -106,7 +106,7 @@ export default function LoginPage() {
     }
     setShowForgot(false);
     setForgotEmail('');
-    toast.success('Check your email for a 6-digit reset code.');
+    toast.success('Check your email for an 8-digit reset code.');
     navigate(`/verify-otp?email=${encodeURIComponent(forgotEmail.trim())}&mode=recovery`);
   };
 
@@ -140,7 +140,7 @@ export default function LoginPage() {
               </button>
             </div>
             <p className="text-surface-600 text-sm mb-6">
-              Enter the email address associated with your account and we'll send you a 6-digit reset code.
+              Enter the email address associated with your account and we'll send you an 8-digit reset code.
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-surface-700 mb-1">Email address</label>

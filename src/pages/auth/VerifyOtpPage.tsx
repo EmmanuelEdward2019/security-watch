@@ -246,7 +246,7 @@ export function VerifyOtpPage() {
                   </div>
 
                   {/* 6-box digit input */}
-                  <div className="flex gap-3 justify-center mb-6">
+                  <div className="flex gap-1.5 justify-center mb-6">
                     {digits.map((d, i) => (
                       <input
                         key={i}
@@ -254,14 +254,14 @@ export function VerifyOtpPage() {
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]"
-                        maxLength={6}
+                        maxLength={8}
                         value={d}
                         onChange={(e) => handleDigitChange(i, e.target.value)}
                         onKeyDown={(e) => handleKeyDown(i, e)}
                         onFocus={(e) => e.target.select()}
                         disabled={verifying}
                         className={`
-                          w-12 h-14 text-center text-2xl font-bold rounded-xl border-2 outline-none
+                          w-9 h-11 text-center text-lg font-bold rounded-lg border-2 outline-none
                           transition-all select-all
                           ${d ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-surface-300 text-surface-900'}
                           focus:border-brand-500 focus:ring-2 focus:ring-brand-200
