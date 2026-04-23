@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { ROLE_HOME } from '@/lib/rbac';
 import toast from 'react-hot-toast';
 
-const CODE_LENGTH = 6;
+const CODE_LENGTH = 8;
 
 export function VerifyOtpPage() {
   const navigate = useNavigate();

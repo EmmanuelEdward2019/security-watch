@@ -198,22 +198,22 @@ function renderAuthEmail(opts: {
     case 'signup':
     case 'email':
       title = 'Verify your email address';
-      preheader = 'Enter your 6-digit code to activate your account.';
-      body = `<p style="margin:0 0 16px;">Thank you for creating an account with The Security Watch. Enter the 6-digit code below in the app to confirm your email address and access your dashboard.</p>
+      preheader = 'Enter your 8-digit code to activate your account.';
+      body = `<p style="margin:0 0 16px;">Thank you for creating an account with The Security Watch. Enter the 8-digit code below in the app to confirm your email address and access your dashboard.</p>
         ${otpBlock(token)}
         <p style="margin:16px 0 0;font-size:13px;color:#71717a;">Open the verification page in the app, type or paste this code into the 6 boxes, and you will be taken straight to your dashboard.</p>`;
       break;
     case 'recovery':
       title = 'Reset your password';
-      preheader = 'Enter your 6-digit code to set a new password.';
-      body = `<p style="margin:0 0 16px;">We received a request to reset the password for your account. Enter the 6-digit code below in the app to verify your identity and choose a new password.</p>
+      preheader = 'Enter your 8-digit code to set a new password.';
+      body = `<p style="margin:0 0 16px;">We received a request to reset the password for your account. Enter the 8-digit code below in the app to verify your identity and choose a new password.</p>
         ${otpBlock(token, '#fff7ed', '#f97316', '#9a3412')}
         <p style="margin:16px 0 0;font-size:13px;color:#71717a;">If you did not request a password reset, you can safely ignore this email. Your password will not be changed.</p>`;
       break;
     case 'magiclink':
       title = 'Your sign-in code';
-      preheader = 'Enter your 6-digit code to sign in.';
-      body = `<p style="margin:0 0 16px;">Enter the 6-digit code below in the app to sign in to The Security Watch.</p>
+      preheader = 'Enter your 8-digit code to sign in.';
+      body = `<p style="margin:0 0 16px;">Enter the 8-digit code below in the app to sign in to The Security Watch.</p>
         ${otpBlock(token)}
         <p style="margin:16px 0 0;font-size:13px;color:#71717a;">If you did not request this code, you can safely ignore this email.</p>`;
       break;

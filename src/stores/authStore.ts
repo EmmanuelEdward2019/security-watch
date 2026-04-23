@@ -283,12 +283,13 @@ export const useAuthStore = create<AuthState>()(
             }
           });
 
-          // If "Remember me" was not checked, clear the session when the browser tab/window closes
-          // so the user has to log in again on next visit.
-          const remembered = localStorage.getItem('tsw-remember-me') === '1';
-          if (!remembered) {
-            window.addEventListener('beforeunload', () => {
-              try {
+          // If "Remember me" was not checked, clear the session when the browser closes.
+          // The flag is checked INSIDE the handler so it reflects whatever the user chose
+          // during the session (not just the value at startup before they logged in).
+          window.addEventListener('beforeunload', () => {
+            try {
+              const remembered = localStorage.getItem('tsw-remember-me') === '1';
+              if (!remembered) {
                 const keysToRemove: string[] = [];
                 for (let i = 0; i < localStorage.length; i++) {
                   const key = localStorage.key(i);
@@ -297,11 +298,11 @@ export const useAuthStore = create<AuthState>()(
                   }
                 }
                 keysToRemove.forEach((k) => localStorage.removeItem(k));
-              } catch {
-                // Non-critical — ignore storage errors
               }
-            });
-          }
+            } catch {
+              // Non-critical — ignore storage errors
+            }
+          });
         }
       },
     }),
