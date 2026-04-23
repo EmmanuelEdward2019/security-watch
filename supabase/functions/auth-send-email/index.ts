@@ -54,7 +54,8 @@ function emailShell(opts: {
       <td align="center">
         <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.08);border:1px solid #e2e8f0;">
           <tr>
-            <td style="background:linear-gradient(135deg,${BRAND.primaryDark} 0%,${BRAND.primary} 100%);padding:28px 32px;">
+            <td style="background:linear-gradient(135deg,${BRAND.primaryDark} 0%,${BRAND.primary} 100%);padding:28px 32px;text-align:center;">
+              <img src="https://thesecuritywatch.com/assets/logo.png" alt="${escapeHtml(BRAND.name)}" width="64" height="64" style="display:block;margin:0 auto 12px;border-radius:8px;object-fit:contain;" />
               <p style="margin:0;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.85);font-family:system-ui,sans-serif;">${escapeHtml(BRAND.name)}</p>
               <h1 style="margin:8px 0 0;font-size:20px;line-height:1.3;color:#ffffff;font-weight:700;font-family:system-ui,sans-serif;">${escapeHtml(opts.title)}</h1>
             </td>
@@ -91,9 +92,16 @@ function ctaButton(href: string, label: string): string {
   </table>`;
 }
 
-function codeBlock(code: string): string {
-  return `<p style="margin:16px 0;font-size:22px;letter-spacing:0.25em;font-weight:700;font-family:ui-monospace,monospace;color:${BRAND.primaryDark};text-align:center;padding:16px;background:#f1f5f9;border-radius:8px;border:1px dashed #cbd5e1;">${escapeHtml(code)}</p>
-  <p style="margin:0;font-size:13px;color:${BRAND.muted};text-align:center;">Enter this code if the button does not work.</p>`;
+function otpBlock(code: string, accentBg = '#f0fdf4', accentBorder = '#22c55e', accentText = '#14532d'): string {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:24px 0;">
+    <tr>
+      <td align="center" style="background:${accentBg};border:2px dashed ${accentBorder};border-radius:12px;padding:28px 20px;">
+        <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;font-weight:600;color:#71717a;font-family:system-ui,sans-serif;">Your verification code</p>
+        <p style="margin:0;font-size:44px;font-weight:800;letter-spacing:14px;color:${accentText};font-family:'Courier New',Courier,monospace;">${escapeHtml(code)}</p>
+        <p style="margin:10px 0 0;font-size:12px;color:#a1a1aa;font-family:system-ui,sans-serif;">Expires in 60 minutes &nbsp;·&nbsp; Do not share this code</p>
+      </td>
+    </tr>
+  </table>`;
 }
 
 // --- Resend ---
@@ -151,12 +159,12 @@ function buildAuthVerifyUrl(
 }
 
 const subjects: Record<string, string> = {
-  signup: 'Confirm your email — The Security Watch',
-  recovery: 'Reset your password — The Security Watch',
-  magiclink: 'Your sign-in link — The Security Watch',
+  signup: 'Your Security Watch verification code',
+  recovery: 'Your Security Watch password reset code',
+  magiclink: 'Your Security Watch sign-in code',
   invite: 'You are invited — The Security Watch',
   email_change: 'Confirm your email change — The Security Watch',
-  email: 'Confirm your email — The Security Watch',
+  email: 'Your Security Watch verification code',
   reauthentication: 'Your verification code — The Security Watch',
   password_changed_notification: 'Your password was changed — The Security Watch',
   email_changed_notification: 'Your email was updated — The Security Watch',
@@ -189,44 +197,44 @@ function renderAuthEmail(opts: {
   switch (emailActionType) {
     case 'signup':
     case 'email':
-      title = 'Confirm your email';
-      preheader = 'Verify your account to access The Security Watch.';
-      body = `<p style="margin:0 0 16px;">Thank you for registering. Please confirm your email address to activate your account and access your dashboard.</p>
-        ${ctaButton(confirmationUrl, 'Confirm email address')}
-        ${codeBlock(token)}`;
+      title = 'Verify your email address';
+      preheader = 'Enter your 6-digit code to activate your account.';
+      body = `<p style="margin:0 0 16px;">Thank you for creating an account with The Security Watch. Enter the 6-digit code below in the app to confirm your email address and access your dashboard.</p>
+        ${otpBlock(token)}
+        <p style="margin:16px 0 0;font-size:13px;color:#71717a;">Open the verification page in the app, type or paste this code into the 6 boxes, and you will be taken straight to your dashboard.</p>`;
       break;
     case 'recovery':
       title = 'Reset your password';
-      preheader = 'Password reset requested for your account.';
-      body = `<p style="margin:0 0 16px;">We received a request to reset the password for your account. Click the button below to choose a new password. This link expires after a short time.</p>
-        ${ctaButton(confirmationUrl, 'Reset password')}
-        ${codeBlock(token)}`;
+      preheader = 'Enter your 6-digit code to set a new password.';
+      body = `<p style="margin:0 0 16px;">We received a request to reset the password for your account. Enter the 6-digit code below in the app to verify your identity and choose a new password.</p>
+        ${otpBlock(token, '#fff7ed', '#f97316', '#9a3412')}
+        <p style="margin:16px 0 0;font-size:13px;color:#71717a;">If you did not request a password reset, you can safely ignore this email. Your password will not be changed.</p>`;
       break;
     case 'magiclink':
-      title = 'Your sign-in link';
-      preheader = 'Use this link to sign in without a password.';
-      body = `<p style="margin:0 0 16px;">Click the button below to sign in to The Security Watch. If you did not request this link, you can ignore this email.</p>
-        ${ctaButton(confirmationUrl, 'Sign in')}
-        ${codeBlock(token)}`;
+      title = 'Your sign-in code';
+      preheader = 'Enter your 6-digit code to sign in.';
+      body = `<p style="margin:0 0 16px;">Enter the 6-digit code below in the app to sign in to The Security Watch.</p>
+        ${otpBlock(token)}
+        <p style="margin:16px 0 0;font-size:13px;color:#71717a;">If you did not request this code, you can safely ignore this email.</p>`;
       break;
     case 'invite':
       title = 'You are invited';
       preheader = 'Accept your invitation to join The Security Watch.';
       body = `<p style="margin:0 0 16px;">You have been invited to create an account on The Security Watch (${escapeHtml(siteUrl)}). Click below to accept the invitation.</p>
-        ${ctaButton(confirmationUrl, 'Accept invitation')}
-        ${codeBlock(token)}`;
+        ${ctaButton(confirmationUrl, 'Accept invitation')}`;
       break;
     case 'email_change':
       title = 'Confirm email change';
       preheader = 'Confirm the update to your email address.';
-      body = `<p style="margin:0 0 16px;">A request was made to change the email address on your account${opts.oldEmail && opts.newEmail ? ` from <strong>${escapeHtml(opts.oldEmail)}</strong> to <strong>${escapeHtml(opts.newEmail)}</strong>` : ''}. Use the button or code to confirm.</p>
+      body = `<p style="margin:0 0 16px;">A request was made to change the email address on your account${opts.oldEmail && opts.newEmail ? ` from <strong>${escapeHtml(opts.oldEmail)}</strong> to <strong>${escapeHtml(opts.newEmail)}</strong>` : ''}. Use the button to confirm.</p>
         ${ctaButton(confirmationUrl, 'Confirm email change')}
-        ${codeBlock(token)}`;
+        ${otpBlock(token)}`;
       break;
     case 'reauthentication':
       title = 'Verify it is you';
       preheader = 'Your one-time verification code.';
-      body = `<p style="margin:0 0 16px;">For your security, please enter this code to continue:</p>${codeBlock(token)}`;
+      body = `<p style="margin:0 0 16px;">For your security, please enter this code to continue:</p>
+        ${otpBlock(token)}`;
       break;
     case 'password_changed_notification':
       title = 'Password updated';
@@ -268,7 +276,7 @@ function renderAuthEmail(opts: {
       title = 'Account notification';
       body = `<p style="margin:0 0 16px;">You have a new notification regarding your account.</p>
         ${confirmationUrl ? ctaButton(confirmationUrl, 'Continue') : ''}
-        ${token ? codeBlock(token) : ''}`;
+        ${token ? otpBlock(token) : ''}`;
   }
 
   const html = emailShell({ title, preheader, innerHtml: body });
