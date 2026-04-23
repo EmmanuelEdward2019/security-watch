@@ -53,10 +53,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('tsw-remember-email');
-    if (savedEmail) {
-      setValue('email', savedEmail);
-      setRememberMe(true);
-    }
+    const remembered = localStorage.getItem('tsw-remember-me') === '1';
+    if (savedEmail) setValue('email', savedEmail);
+    if (remembered) setRememberMe(true);
   }, [setValue]);
 
 
@@ -65,8 +64,10 @@ export default function LoginPage() {
 
     if (rememberMe) {
       localStorage.setItem('tsw-remember-email', data.email);
+      localStorage.setItem('tsw-remember-me', '1');
     } else {
       localStorage.removeItem('tsw-remember-email');
+      localStorage.removeItem('tsw-remember-me');
     }
 
     const result = await signIn(data.email, data.password);

@@ -282,6 +282,26 @@ export const useAuthStore = create<AuthState>()(
               }
             }
           });
+
+          // If "Remember me" was not checked, clear the session when the browser tab/window closes
+          // so the user has to log in again on next visit.
+          const remembered = localStorage.getItem('tsw-remember-me') === '1';
+          if (!remembered) {
+            window.addEventListener('beforeunload', () => {
+              try {
+                const keysToRemove: string[] = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                  const key = localStorage.key(i);
+                  if (key && ((key.startsWith('sb-') && key.endsWith('-auth-token')) || key === 'tsw-auth')) {
+                    keysToRemove.push(key);
+                  }
+                }
+                keysToRemove.forEach((k) => localStorage.removeItem(k));
+              } catch {
+                // Non-critical — ignore storage errors
+              }
+            });
+          }
         }
       },
     }),
