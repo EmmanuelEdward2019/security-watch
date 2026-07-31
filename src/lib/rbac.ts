@@ -37,7 +37,18 @@ const ROUTE_PERMISSIONS: { path: string; roles: UserRole[]; exact?: boolean }[] 
   { path: '/app/cases/submit-report', roles: ['investigator', 'medical_expert'], exact: true },
   { path: '/app/cases', roles: ['complainant', 'investigator', 'lawyer', 'medical_expert', 'witness', 'admin'] },
 
-  { path: '/app/verification', roles: ['investigator'] },
+  // Reachable by applicants, not just by people who already hold the role.
+  //
+  // Since migration 004, requesting `investigator`, `lawyer` or `medical_expert`
+  // at signup no longer grants it — the account stays `complainant` with the
+  // request recorded in `profiles.requested_role` until an admin approves the
+  // KYC submission. Gating this page on the granted role therefore locked every
+  // applicant out of the only screen that could get them approved.
+  //
+  // The `investigators` table backs all three reviewed roles; the name is
+  // historical. `admin_review_investigator()` grants whichever role the
+  // applicant requested.
+  { path: '/app/verification', roles: ['complainant', 'investigator', 'lawyer', 'medical_expert'] },
   { path: '/app/availability', roles: ['investigator'] },
   { path: '/app/earnings', roles: ['investigator', 'lawyer'] },
   { path: '/app/legal-documents', roles: ['lawyer'] },

@@ -476,12 +476,23 @@ Deno.serve(async (req: Request) => {
       }
     } else {
       let finalRedirectTo = email_data.redirect_to || email_data.site_url || '/';
-      
-      // Force reset password to go to the correct page, even if Supabase stripped the URL
-      // due to URL allow-list restrictions in the dashboard.
-      if (email_data.email_action_type === 'recovery') {
-         const siteUrl = email_data.site_url || supabaseUrl;
-         finalRedirectTo = `${siteUrl.replace(/\/$/, '')}/reset-password`;
+
+      // Password reset needs a landing page, and Supabase Auth blanks
+      // `redirect_to` when the requested URL is not on the dashboard allow-list.
+      // So when it arrives empty we substitute the web reset page.
+      //
+      // What we must NOT do is override a redirect that IS present. An earlier
+      // version forced `${site_url}/reset-password` unconditionally, which meant
+      // the mobile app's `securitywatch://reset-password` was discarded even
+      // after being allow-listed — reset emails always pointed at the website and
+      // the deep link never fired.
+      //
+      // Honouring the value is safe: Supabase has already validated it against
+      // the allow-list before handing it to this hook, and this function now
+      // rejects unsigned payloads, so `redirect_to` cannot be attacker-supplied.
+      if (email_data.email_action_type === 'recovery' && !email_data.redirect_to) {
+        const siteUrl = email_data.site_url || supabaseUrl;
+        finalRedirectTo = `${siteUrl.replace(/\/$/, '')}/reset-password`;
       }
 
       const confirmationUrl = buildAuthVerifyUrl(supabaseUrl, {

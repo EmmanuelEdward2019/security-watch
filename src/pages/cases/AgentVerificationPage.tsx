@@ -75,8 +75,10 @@ export function AgentVerificationPage() {
         .from('investigators')
         .select('*')
         .eq('user_id', user.user_id)
-        .single();
-      setInvestigator(data as Investigator | null);
+        // An applicant has no row until they submit — .single() would raise
+        // PGRST116 on every first visit.
+        .maybeSingle();
+      setInvestigator((data as Investigator | null) ?? null);
       setIsLoading(false);
     }
     loadInvestigator();

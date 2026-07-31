@@ -105,6 +105,8 @@ const roleNavSections: Record<UserRole, NavSection[]> = {
       ],
     },
   ],
+  // `lawyer` and `medical_expert` reach Verification through the same
+  // `investigators` application record — see rbac.ts.
   investigator: [
     {
       title: 'Investigations',
@@ -128,6 +130,7 @@ const roleNavSections: Record<UserRole, NavSection[]> = {
       items: [
         { to: '/app/cases', label: 'Legal Cases', icon: Scale },
         { to: '/app/legal-documents', label: 'Documents', icon: FolderOpen },
+        { to: '/app/verification', label: 'Verification', icon: ShieldCheck },
       ],
     },
     {
@@ -144,6 +147,7 @@ const roleNavSections: Record<UserRole, NavSection[]> = {
         { to: '/app/cases', label: 'Assigned Cases', icon: Stethoscope },
         { to: '/app/evidence-analysis', label: 'Evidence Analysis', icon: Microscope },
         { to: '/app/cases/submit-report', label: 'Upload Reports', icon: FileCheck },
+        { to: '/app/verification', label: 'Verification', icon: ShieldCheck },
       ],
     },
   ],

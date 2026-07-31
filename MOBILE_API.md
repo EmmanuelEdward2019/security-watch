@@ -40,6 +40,55 @@ thrown exception.
 
 ---
 
+## 0.1 Generated types — stop hand-writing these
+
+`src/types/database.types.ts` in the web repo is generated from the live schema
+and is the machine-checked companion to this document. **Copy it into the mobile
+repo and type the client with it**, rather than transcribing tables by hand:
+
+```ts
+import type { Database } from './types/database.types';
+export const supabase = createClient<Database>(url, anonKey, { … });
+```
+
+Regenerate after any migration:
+
+```bash
+supabase gen types typescript --project-id pqjwzidrgkskpjihxvxa --schema public \
+  > src/types/database.types.ts
+```
+
+Values that were previously guessed, now settled — all verified 30 July 2026:
+
+| Question | Answer |
+|---|---|
+| `investigators.verification_status` | `pending \| approved \| rejected` — **`approved`, not `verified`** |
+| `guarantors.verification_status` | `pending \| approved \| rejected` (identical) |
+| `admin_review_investigator(p_status)` accepts | `pending \| approved \| rejected`. Anything else raises |
+| `audit_logs.severity` | `info \| notice \| warning \| critical` |
+| `account_deletion_requests.status` | `pending \| processing \| completed \| rejected` |
+| `notifications.type` | `info \| warning \| success \| error` |
+| `property_requests.status` | `pending \| accepted \| rejected` |
+| `blog_posts.status` | `draft \| published \| archived` |
+| `properties` has `created_at` / `updated_at` | **Yes, both.** §4.7's block was abridged |
+| `property_documents` columns | `id, property_id, document_type, file_url, file_name, verified, created_at` (7) |
+| `property_requests` columns | `id, property_id, requester_id, message, status, created_at` (6) |
+
+RPC return shapes:
+
+```
+my_earnings()           payment_id, case_id, case_title, amount, currency, status, purpose, created_at
+my_activity()           id, kind, title, detail, status, occurred_at
+landlord_transactions() payment_id, property_id, property_title, counterparty_name,
+                        amount, currency, status, purpose, reference, created_at
+institution_rankings()  institution_id, name, type, location, avg_score, evaluations, published_reports
+```
+
+Note `property_documents` and `property_requests` have **no `updated_at`** — do
+not order by it.
+
+---
+
 ## 1. Connection
 
 ### 1.1 Project
@@ -578,29 +627,38 @@ path fails loudly rather than silently replacing the bytes.
 
 ### 6.2 Upload
 
+**One rule governs this whole section: hash the same bytes you upload.** Read the
+file into a `Uint8Array` once, then hash *that* and upload *that*. Never hash a
+base64 string while uploading decoded bytes — the two differ, and every
+verification would fail forever.
+
 ```ts
 import * as Crypto from 'expo-crypto';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 
 export function buildObjectPath(scopeId: string, fileName: string) {
   const safe = fileName.normalize('NFKD').replace(/[^\w.\-]+/g, '_').slice(-120);
   return `${scopeId}/${Crypto.randomUUID()}-${safe}`;
 }
 
-export async function uploadEvidence(caseId: string, asset: { uri: string; name: string; mimeType: string }) {
-  const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
+/** Hex SHA-256 over raw bytes. Matches the web app exactly — see §6.3. */
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
-  // SHA-256 of the bytes, recorded on the row and re-checked on every download.
-  const hash = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    base64,
-    { encoding: Crypto.CryptoEncoding.HEX }
-  );
+export async function uploadEvidence(
+  caseId: string,
+  userId: string,
+  asset: { uri: string; name: string; mimeType: string }
+) {
+  // Read once. These exact bytes are both hashed and uploaded.
+  const bytes = new File(asset.uri).bytes();      // Uint8Array, no base64 anywhere
+  const hash = await sha256Hex(bytes);
 
   const path = buildObjectPath(caseId, asset.name);
-  const bytes = decodeBase64ToUint8Array(base64); // use `base64-arraybuffer`
 
   const { error } = await supabase.storage
     .from('evidence')
@@ -610,7 +668,7 @@ export async function uploadEvidence(caseId: string, asset: { uri: string; name:
   await supabase.from('evidence').insert({
     case_id: caseId,
     uploaded_by: userId,
-    file_url: path,          // the PATH, not a URL
+    file_url: path,               // the PATH, not a URL
     file_name: asset.name,
     file_type: asset.mimeType,
     file_size: bytes.byteLength,
@@ -619,9 +677,38 @@ export async function uploadEvidence(caseId: string, asset: { uri: string; name:
 }
 ```
 
-> Hash the **same bytes you upload**. Hashing the base64 string and uploading the
-> decoded bytes gives a hash that never verifies. Pick one representation and be
-> consistent with the web app, which hashes the raw `ArrayBuffer`.
+`new File(uri).bytes()` is the Expo SDK 54+ filesystem API. On older SDKs use
+`FileSystem.readAsStringAsync` with base64 **and decode before hashing**, so the
+hash still runs over the bytes:
+
+```ts
+const b64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+const bytes = new Uint8Array(decode(b64));   // base64-arraybuffer
+const hash = await sha256Hex(bytes);         // hash the BYTES, not `b64`
+```
+
+**Do not transform the file between hashing and upload** — no re-encode, no
+resize, no EXIF strip. If you must transform (e.g. `canvas`-style photo
+compression), do it first and hash the result. The web app's field-recording
+screen re-encodes photos to JPEG and then hashes the encoded blob, which is
+correct because the same blob is uploaded.
+
+### 6.2.1 Golden test vector
+
+Both implementations must agree or cross-platform verification silently breaks.
+Assert this in a unit test:
+
+```ts
+const bytes = new Uint8Array([0x61, 0x62, 0x63]);      // ASCII "abc"
+expect(await sha256Hex(bytes)).toBe(
+  'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+);
+```
+
+Verified on **30 July 2026** against `generateFileHash()` in
+`src/lib/supabase.ts` (web) — it produces the identical digest. That is also the
+NIST published SHA-256 of `"abc"`, so a mismatch means your input representation
+is wrong, not the algorithm.
 
 ### 6.3 Read, and verify
 
@@ -743,6 +830,26 @@ tab bar.
 
 On `rejected`, `admin_notes` carries the reason. Show it and allow re-submission;
 the upsert above handles that case.
+
+### 6.4.1 Lawyers and medical experts use the same table
+
+There is no `lawyers` or `medical_experts` table. **`investigators` is the
+credentials record for all three reviewed roles** — the name is historical.
+
+`admin_review_investigator()` reads `profiles.requested_role` and grants whichever
+of `investigator | lawyer | medical_expert` was asked for, so one application
+record and one review RPC serve all three.
+
+> **As of 30 July 2026 no lawyer or medical expert had ever applied**, and the
+> `investigators` table is empty. The three existing privileged accounts were
+> granted manually before the hardening. The web app's own verification route was
+> gated on `role === 'investigator'` — i.e. on the role you only get *after*
+> approval — so applicants of every kind were locked out of the one screen that
+> could approve them. That gate is now widened to `complainant`, `investigator`,
+> `lawyer` and `medical_expert`.
+>
+> Mobile will be the first client to exercise this path end to end. Expect to
+> find rough edges the web app never hit, and report them.
 
 ### 6.5 Legacy rows
 
