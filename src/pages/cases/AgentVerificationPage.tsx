@@ -113,6 +113,15 @@ export function AgentVerificationPage() {
     if (!user?.user_id) return;
     setIsSubmitting(true);
     try {
+      /**
+       * Uploads one KYC document and returns its object PATH.
+       *
+       * `kyc-documents` is a private bucket. This used to return
+       * `getPublicUrl()`, which produces a URL that resolves to an error — so
+       * the documents were written but neither the applicant nor the reviewing
+       * admin could ever open them. Paths are stored and signed at read time
+       * instead; see AgentVerificationTab.
+       */
       const uploadToStorage = async (
         files: UploadedFile[],
         folder: string
@@ -125,10 +134,7 @@ export function AgentVerificationPage() {
           .from(STORAGE_BUCKETS.KYC_DOCUMENTS)
           .upload(path, file, { upsert: false });
         if (error) throw error;
-        const { data: urlData } = supabase.storage
-          .from(STORAGE_BUCKETS.KYC_DOCUMENTS)
-          .getPublicUrl(data.path);
-        return urlData.publicUrl;
+        return data.path;
       };
 
       const idUrl = await uploadToStorage(idFiles, 'id');

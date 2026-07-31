@@ -7,11 +7,83 @@ import {
   TextArea,
 } from '@/components/ui';
 import type { Column } from '@/components/ui';
-import { supabase } from '@/lib/supabase';
+import { supabase, STORAGE_BUCKETS, resolveStorageUrl } from '@/lib/supabase';
 import { reviewInvestigator } from '@/services/adminService';
 import type { Investigator } from '@/types';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+
+/**
+ * Opens a KYC document.
+ *
+ * `kyc-documents` is a private bucket, so these rows hold an object path and the
+ * URL has to be signed at click time. The page previously rendered the stored
+ * value straight into `href` and `src`, which meant the reviewing admin could
+ * never actually see the ID they were being asked to approve.
+ *
+ * `resolveStorageUrl` also recovers a path from the legacy public URLs written
+ * before that was fixed, so older applications still open.
+ */
+function KycDocumentLink({
+  path,
+  label,
+  preview = false,
+}: {
+  path: string;
+  label: string;
+  preview?: boolean;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      const signed = await resolveStorageUrl(STORAGE_BUCKETS.KYC_DOCUMENTS, path, 600);
+      if (!cancelled) {
+        setUrl(signed);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  if (loading) return <span className="text-sm text-surface-400">Loading\u2026</span>;
+  if (!url) {
+    return (
+      <span className="text-sm text-accent-600" title={path}>
+        Unavailable
+      </span>
+    );
+  }
+
+  if (preview) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block rounded-lg border overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      >
+        <img src={url} alt={label} className="w-full h-40 object-cover" />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-sm text-brand-600 hover:underline"
+    >
+      {label}
+    </a>
+  );
+}
 
 export function AgentVerificationTab() {
   const [agents, setAgents] = useState<(Investigator & { profile?: { full_name: string; avatar_url?: string } })[]>([]);
@@ -110,24 +182,10 @@ export function AgentVerificationTab() {
       render: (_, row) => (
         <div className="flex gap-2">
           {row.id_document_url && (
-            <a
-              href={row.id_document_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-brand-600 hover:underline"
-            >
-              ID
-            </a>
+            <KycDocumentLink path={row.id_document_url} label="ID" />
           )}
           {row.service_records_url && (
-            <a
-              href={row.service_records_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-brand-600 hover:underline"
-            >
-              Records
-            </a>
+            <KycDocumentLink path={row.service_records_url} label="Records" />
           )}
         </div>
       ),
@@ -170,27 +228,13 @@ export function AgentVerificationTab() {
               {selected.id_document_url && (
                 <div>
                   <p className="text-sm font-medium text-surface-700 mb-2">ID Document</p>
-                  <a
-                    href={selected.id_document_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block rounded-lg border overflow-hidden"
-                  >
-                    <img src={selected.id_document_url} alt="ID" className="w-full h-40 object-cover" />
-                  </a>
+                  <KycDocumentLink path={selected.id_document_url} label="ID document" preview />
                 </div>
               )}
               {selected.service_records_url && (
                 <div>
                   <p className="text-sm font-medium text-surface-700 mb-2">Service Records</p>
-                  <a
-                    href={selected.service_records_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-brand-600 hover:underline"
-                  >
-                    View document
-                  </a>
+                  <KycDocumentLink path={selected.service_records_url} label="View document" />
                 </div>
               )}
             </div>

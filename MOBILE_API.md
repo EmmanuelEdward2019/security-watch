@@ -137,7 +137,7 @@ const awaitingReview =
   profile.role_confirmed_at === null;
 ```
 
-Show these users a "verification pending" screen with the KYC upload flow (§7.3),
+Show these users a "verification pending" screen with the KYC upload flow (§6.4),
 not the investigator dashboard.
 
 ### 2.2 Sign in, OTP, reset
@@ -656,7 +656,95 @@ await supabase.rpc('append_custody_entry', {
 
 Surface a mismatch loudly. It means the file changed after filing.
 
-### 6.4 Legacy rows
+### 6.4 KYC upload — the professional verification flow
+
+This is what the *pending verification* screen from §2.1 submits. It applies to
+anyone whose `requested_role` is `investigator`, `lawyer` or `medical_expert` —
+all three use the same `investigators` row as their application record.
+
+**Write targets** (all self-writable — confirmed against the live trigger):
+
+| Column | Holds |
+|---|---|
+| `investigators.id_document_url` | Object path of the applicant's government ID |
+| `investigators.service_records_url` | Object path of their service record / credentials |
+| `guarantors.id_document_url` | Object path of each guarantor's ID |
+
+> Despite the column names ending in `_url`, **store the object path**, not a URL.
+> `kyc-documents` is private. Naming is historical; the web app stored
+> `getPublicUrl()` here and the result was that neither the applicant nor the
+> reviewing admin could open the documents. Both sides now store and sign paths.
+
+`verification_status`, `rating`, `total_cases` and `admin_notes` are pinned by a
+trigger — send them and they are silently reset. Everything else on the row
+(`specialization`, `service_area`, `experience_years`, `is_available`) is yours.
+
+**The flow**, mirroring `AgentVerificationPage.tsx` on web:
+
+```ts
+// 1. Upload each document under the applicant's own user id.
+//    The KYC storage policy checks the FIRST path segment — it must be user_id
+//    or the upload is rejected.
+async function uploadKycDoc(userId: string, asset: Asset, kind: string) {
+  const path = buildObjectPath(userId, `${kind}-${asset.name}`);
+  const { data, error } = await supabase.storage
+    .from('kyc-documents')
+    .upload(path, bytes, { contentType: asset.mimeType, upsert: false });
+  if (error) throw error;
+  return data.path;                    // ← the PATH
+}
+
+const idPath      = await uploadKycDoc(userId, idAsset, 'id');
+const recordsPath = await uploadKycDoc(userId, recordsAsset, 'service');
+const g1Path      = await uploadKycDoc(userId, g1Asset, 'guarantor1');
+const g2Path      = await uploadKycDoc(userId, g2Asset, 'guarantor2');
+
+// 2. Upsert the application. onConflict handles re-submission after rejection.
+const { data: inv, error } = await supabase
+  .from('investigators')
+  .upsert(
+    {
+      user_id: userId,
+      id_document_url: idPath,
+      service_records_url: recordsPath,
+      specialization,          // string[]
+      service_area,
+      experience_years,
+    },
+    { onConflict: 'user_id' }
+  )
+  .select('id')
+  .single();
+
+// 3. Two guarantors are required. verification_status is forced to 'pending'.
+await supabase.from('guarantors').insert([
+  { investigator_id: inv.id, ...g1, id_document_url: g1Path },
+  { investigator_id: inv.id, ...g2, id_document_url: g2Path },
+]);
+```
+
+`guarantors` requires `full_name`, `email`, `phone` and `relationship`, all
+`NOT NULL`. The web app collects exactly two — match that.
+
+**Reading them back.** The applicant and admins can both read; sign at display
+time and treat a null result as "unavailable" rather than crashing:
+
+```ts
+const url = await signedUrl('kyc-documents', row.id_document_url, 600);
+```
+
+**What happens next is not yours to drive.** An admin calls
+`admin_review_investigator()`, which in one transaction sets the verification
+status, flips `profiles.kyc_status`, and grants the role they applied for. Your
+screen should poll or subscribe to the `investigators` row and route the user
+onward when `verification_status` becomes `approved` — at which point their
+`profile.role` will have changed too, so re-fetch the profile and rebuild the
+tab bar.
+
+On `rejected`, `admin_notes` carries the reason. Show it and allow re-submission;
+the upsert above handles that case.
+
+### 6.5 Legacy rows
 
 Some old rows still store full public URLs from before the fix. Handle both:
 
