@@ -13,6 +13,7 @@ interface MessageState {
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (conversationId: string, senderId: string, content: string, fileUrl?: string, fileName?: string) => Promise<{ error: string | null }>;
   createConversation: (type: 'direct' | 'group', participantIds: string[], caseId?: string, title?: string) => Promise<{ id: string | null; error: string | null }>;
+  addParticipant: (conversationId: string, userId: string) => Promise<{ error: string | null }>;
   setCurrentConversation: (conversation: Conversation | null) => void;
   subscribeToMessages: (conversationId: string) => void;
   unsubscribeFromMessages: () => void;
@@ -59,6 +60,8 @@ export const useMessageStore = create<MessageState>((set, get) => ({
   },
 
   sendMessage: async (conversationId, senderId, content, fileUrl, fileName) => {
+    // sender_id is overwritten with the authenticated identity by a trigger, so
+    // it cannot be spoofed regardless of what is passed here.
     const { error } = await supabase.from('messages').insert({
       conversation_id: conversationId,
       sender_id: senderId,
@@ -72,26 +75,38 @@ export const useMessageStore = create<MessageState>((set, get) => ({
     return { error: null };
   },
 
+  /**
+   * Starts a conversation.
+   *
+   * This used to insert the conversation and then batch-insert a participant row
+   * per member — which RLS rejected for every member except the caller, so
+   * starting a chat with anyone else silently failed and left an orphaned
+   * conversation with no participants.
+   *
+   * The self-insert policy that caused it was also the hole that let any
+   * authenticated user add themselves to *any* conversation and read its
+   * messages. Both are fixed by the same change: membership is now only granted
+   * by an RPC that verifies the caller belongs there, and enrols everyone
+   * atomically. It also reuses an existing direct thread instead of duplicating.
+   */
   createConversation: async (type, participantIds, caseId, title) => {
-    const { data: conv, error: convError } = await supabase
-      .from('conversations')
-      .insert({ type, case_id: caseId, title })
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('create_conversation', {
+      p_type: type,
+      p_participant_ids: participantIds,
+      p_case_id: caseId ?? null,
+      p_title: title ?? null,
+    });
 
-    if (convError) return { id: null, error: convError.message };
+    if (error) return { id: null, error: error.message };
+    return { id: data as string, error: null };
+  },
 
-    const participants = participantIds.map((userId) => ({
-      conversation_id: conv.id,
-      user_id: userId,
-    }));
-
-    const { error: partError } = await supabase
-      .from('conversation_participants')
-      .insert(participants);
-
-    if (partError) return { id: null, error: partError.message };
-    return { id: conv.id, error: null };
+  addParticipant: async (conversationId, userId) => {
+    const { error } = await supabase.rpc('add_conversation_participant', {
+      p_conversation_id: conversationId,
+      p_user_id: userId,
+    });
+    return { error: error?.message ?? null };
   },
 
   setCurrentConversation: (conversation) => set({ currentConversation: conversation }),

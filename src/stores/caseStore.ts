@@ -1,14 +1,13 @@
 import { create } from 'zustand';
 import type { Case, CaseStatus, CaseUrgency, Evidence } from '@/types';
-import { supabase } from '@/lib/supabase';
-import { sendTemplatedEmail } from '@/lib/email';
-import { CASE_STATUS_LABELS } from '@/types';
+import { supabase, STORAGE_BUCKETS, getSignedUrl, downloadAndVerify } from '@/lib/supabase';
 
 interface CaseState {
   cases: Case[];
   currentCase: Case | null;
   evidence: Evidence[];
   isLoading: boolean;
+  error: string | null;
   filters: {
     status?: CaseStatus;
     category?: string;
@@ -20,39 +19,36 @@ interface CaseState {
   fetchCase: (id: string) => Promise<void>;
   createCase: (caseData: Partial<Case>) => Promise<{ id: string | null; error: string | null }>;
   updateCase: (id: string, updates: Partial<Case>) => Promise<{ error: string | null }>;
+  updateCaseStatus: (id: string, status: CaseStatus) => Promise<{ error: string | null }>;
   fetchEvidence: (caseId: string) => Promise<void>;
   addEvidence: (evidence: Partial<Evidence>) => Promise<{ error: string | null }>;
+  getEvidenceUrl: (evidence: Evidence) => Promise<string | null>;
+  downloadEvidence: (evidence: Evidence) => Promise<{
+    blob: Blob | null;
+    verified: boolean | null;
+    error: string | null;
+  }>;
   setFilters: (filters: CaseState['filters']) => void;
-  assignInvestigator: (caseId: string, investigatorId: string) => Promise<{ error: string | null }>;
+  clearError: () => void;
 }
 
-/** Create an in-app notification for a user */
-async function createNotification(payload: {
-  userId: string;
-  title: string;
-  message: string;
-  type: 'info' | 'warning' | 'success' | 'error';
-  link?: string;
-}) {
-  await supabase.from('notifications').insert({
-    user_id: payload.userId,
-    title: payload.title,
-    message: payload.message,
-    type: payload.type,
-    read: false,
-    link: payload.link,
-    created_at: new Date().toISOString(),
-  });
-}
+/** Descriptive fields a participant may edit directly. */
+const EDITABLE_CASE_FIELDS = [
+  'title',
+  'description',
+  'category',
+  'urgency',
+  'location',
+  'latitude',
+  'longitude',
+] as const;
 
-/** Look up a user's email from their profile */
-async function getUserEmail(userId: string): Promise<{ email: string; full_name: string } | null> {
-  const { data } = await supabase
-    .from('profiles')
-    .select('email, full_name')
-    .eq('user_id', userId)
-    .maybeSingle();
-  return data ?? null;
+function pickEditable(updates: Partial<Case>): Partial<Case> {
+  const out: Record<string, unknown> = {};
+  for (const key of EDITABLE_CASE_FIELDS) {
+    if (key in updates && updates[key] !== undefined) out[key] = updates[key];
+  }
+  return out as Partial<Case>;
 }
 
 export const useCaseStore = create<CaseState>((set, get) => ({
@@ -60,13 +56,22 @@ export const useCaseStore = create<CaseState>((set, get) => ({
   currentCase: null,
   evidence: [],
   isLoading: false,
+  error: null,
   filters: {},
 
+  clearError: () => set({ error: null }),
+
   fetchCases: async (userId, role) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
+
+    // The embedded profile joins resolve for non-admins now: migration 004 lets
+    // case participants read each other's profile. Before that, every one of
+    // these came back null and case cards rendered blank.
     let query = supabase
       .from('cases')
-      .select('*, complainant:profiles!complainant_id(*), investigator:profiles!assigned_investigator_id(*)')
+      .select(
+        '*, complainant:profiles!complainant_id(user_id, full_name, email, phone, avatar_url, role), investigator:profiles!assigned_investigator_id(user_id, full_name, email, avatar_url, role)'
+      )
       .order('created_at', { ascending: false });
 
     if (userId && role === 'complainant') {
@@ -75,6 +80,8 @@ export const useCaseStore = create<CaseState>((set, get) => ({
       query = query.eq('assigned_investigator_id', userId);
     } else if (userId && role === 'lawyer') {
       query = query.eq('assigned_lawyer_id', userId);
+    } else if (userId && role === 'medical_expert') {
+      query = query.eq('assigned_expert_id', userId);
     }
 
     const { status, search, category, urgency } = get().filters;
@@ -84,27 +91,48 @@ export const useCaseStore = create<CaseState>((set, get) => ({
     if (search) query = query.ilike('title', `%${search}%`);
 
     const { data, error } = await query;
-    if (!error && data) set({ cases: data as Case[] });
-    set({ isLoading: false });
+
+    if (error) {
+      // Surface failures instead of leaving stale data with no explanation.
+      set({ error: error.message, isLoading: false });
+      return;
+    }
+    set({ cases: (data ?? []) as Case[], isLoading: false });
   },
 
   fetchCase: async (id) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     const { data, error } = await supabase
       .from('cases')
-      .select('*, complainant:profiles!complainant_id(*), investigator:profiles!assigned_investigator_id(*)')
+      .select(
+        '*, complainant:profiles!complainant_id(user_id, full_name, email, phone, avatar_url, role), investigator:profiles!assigned_investigator_id(user_id, full_name, email, avatar_url, role)'
+      )
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (!error && data) set({ currentCase: data as Case });
-    set({ isLoading: false });
+    if (error) {
+      set({ error: error.message, isLoading: false });
+      return;
+    }
+    set({ currentCase: (data as Case) ?? null, isLoading: false });
   },
 
   createCase: async (caseData) => {
+    // status and assignments are pinned server-side on insert, so there is no
+    // point sending them.
     const { data, error } = await supabase
       .from('cases')
-      .insert(caseData)
-      .select()
+      .insert({
+        title: caseData.title,
+        description: caseData.description,
+        category: caseData.category,
+        urgency: caseData.urgency,
+        location: caseData.location,
+        latitude: caseData.latitude ?? null,
+        longitude: caseData.longitude ?? null,
+        complainant_id: caseData.complainant_id,
+      })
+      .select('id')
       .single();
 
     if (error) return { id: null, error: error.message };
@@ -112,49 +140,60 @@ export const useCaseStore = create<CaseState>((set, get) => ({
   },
 
   updateCase: async (id, updates) => {
-    const { error } = await supabase
+    const safe = pickEditable(updates);
+
+    // A status change has to go through the state machine.
+    if (updates.status) {
+      const { error } = await get().updateCaseStatus(id, updates.status);
+      if (error) return { error };
+    }
+
+    if (Object.keys(safe).length === 0) return { error: null };
+
+    const { data, error } = await supabase
       .from('cases')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .update(safe)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error) return { error: error.message };
+
+    const currentCase = get().currentCase;
+    if (currentCase?.id === id && data) {
+      set({ currentCase: { ...currentCase, ...(data as Case) } });
+    }
+    return { error: null };
+  },
+
+  /**
+   * Moves a case through its lifecycle.
+   *
+   * Handled by an RPC that enforces which transitions each role may make — an
+   * investigator can advance their own stage, a complainant can withdraw, only
+   * an admin can go anywhere. Direct writes to `cases.status` are reverted by a
+   * trigger and logged, because previously any participant (including the
+   * complainant) could set any status and write themselves into the assignment
+   * slots.
+   *
+   * The RPC also raises the notification and the audit entry, so those no longer
+   * depend on the client remembering to.
+   */
+  updateCaseStatus: async (id, status) => {
+    const { error } = await supabase.rpc('update_case_status', {
+      p_case_id: id,
+      p_status: status,
+    });
 
     if (error) return { error: error.message };
 
     const currentCase = get().currentCase;
     if (currentCase?.id === id) {
-      set({ currentCase: { ...currentCase, ...updates } });
+      set({ currentCase: { ...currentCase, status } });
     }
-
-    // Fire notification + email if status changed
-    if (updates.status) {
-      const caseTitle = currentCase?.title ?? 'Your case';
-      const statusLabel = CASE_STATUS_LABELS[updates.status] ?? updates.status;
-      const complainantId = currentCase?.complainant_id;
-
-      if (complainantId) {
-        // Notify complainant about status change
-        createNotification({
-          userId: complainantId,
-          title: 'Case Status Updated',
-          message: `"${caseTitle}" status changed to: ${statusLabel}.`,
-          type: 'info',
-          link: `/app/cases/${id}`,
-        });
-
-        // Email complainant (non-blocking)
-        getUserEmail(complainantId).then((profile) => {
-          if (profile) {
-            sendTemplatedEmail(profile.email, 'case_status_update', {
-              recipientName: profile.full_name,
-              caseTitle,
-              caseId: id,
-              status: statusLabel,
-              actionUrl: `${window.location.origin}/app/cases/${id}`,
-            }).catch(() => {/* ignore */});
-          }
-        });
-      }
-    }
-
+    set({
+      cases: get().cases.map((c) => (c.id === id ? { ...c, status } : c)),
+    });
     return { error: null };
   },
 
@@ -165,89 +204,75 @@ export const useCaseStore = create<CaseState>((set, get) => ({
       .eq('case_id', caseId)
       .order('created_at', { ascending: false });
 
-    if (!error && data) set({ evidence: data as Evidence[] });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ evidence: (data ?? []) as Evidence[] });
   },
 
   addEvidence: async (evidence) => {
-    const { error } = await supabase.from('evidence').insert(evidence);
+    // chain_of_custody is written by a database trigger from the authenticated
+    // identity, so the client cannot author its own provenance.
+    const { error } = await supabase.from('evidence').insert({
+      case_id: evidence.case_id,
+      file_url: evidence.file_url,
+      file_name: evidence.file_name,
+      file_type: evidence.file_type,
+      file_size: evidence.file_size,
+      file_hash: evidence.file_hash,
+      description: evidence.description ?? null,
+      uploaded_by: evidence.uploaded_by,
+    });
+
     if (error) return { error: error.message };
     if (evidence.case_id) await get().fetchEvidence(evidence.case_id);
     return { error: null };
   },
 
-  setFilters: (filters) => set({ filters }),
-
-  assignInvestigator: async (caseId, investigatorId) => {
-    // Fetch the case to get its title + complainant before updating
-    const { data: caseData } = await supabase
-      .from('cases')
-      .select('title, complainant_id')
-      .eq('id', caseId)
-      .maybeSingle();
-
-    const { error } = await supabase
-      .from('cases')
-      .update({
-        assigned_investigator_id: investigatorId,
-        status: 'assigned' as CaseStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', caseId);
-
-    if (error) return { error: error.message };
-
-    const caseTitle = caseData?.title ?? 'A case';
-    const complainantId = caseData?.complainant_id;
-
-    // 1. Notify investigator
-    createNotification({
-      userId: investigatorId,
-      title: 'New Case Assigned',
-      message: `You have been assigned to: "${caseTitle}". Please review and begin your investigation.`,
-      type: 'success',
-      link: `/app/cases/${caseId}`,
-    });
-
-    // 2. Notify complainant
-    if (complainantId) {
-      createNotification({
-        userId: complainantId,
-        title: 'Investigator Assigned',
-        message: `An investigator has been assigned to your case: "${caseTitle}".`,
-        type: 'success',
-        link: `/app/cases/${caseId}`,
+  /**
+   * Signs an evidence file for viewing and records the access.
+   *
+   * Evidence lives in a private bucket. The old code stored a public URL that
+   * never resolved, so evidence was unreadable by everyone including admins.
+   */
+  getEvidenceUrl: async (evidence) => {
+    const { url } = await getSignedUrl(STORAGE_BUCKETS.EVIDENCE, evidence.file_url, 600);
+    if (url) {
+      void supabase.rpc('append_custody_entry', {
+        p_evidence_id: evidence.id,
+        p_action: 'viewed',
+        p_notes: null,
       });
     }
-
-    // 3. Send emails (non-blocking)
-    const dashboardUrl = `${window.location.origin}/app/cases/${caseId}`;
-
-    getUserEmail(investigatorId).then((profile) => {
-      if (profile) {
-        sendTemplatedEmail(profile.email, 'investigator_matched', {
-          recipientName: profile.full_name,
-          caseTitle,
-          caseId,
-          actionUrl: dashboardUrl,
-        }).catch(() => {});
-      }
-    });
-
-    if (complainantId) {
-      getUserEmail(complainantId).then((profile) => {
-        if (profile) {
-          sendTemplatedEmail(profile.email, 'case_status_update', {
-            recipientName: profile.full_name,
-            caseTitle,
-            caseId,
-            status: 'Assigned — Investigator is on the case',
-            actionUrl: dashboardUrl,
-          }).catch(() => {});
-        }
-      });
-    }
-
-    await get().fetchCase(caseId);
-    return { error: null };
+    return url;
   },
+
+  /**
+   * Downloads evidence and re-checks its SHA-256 against what was recorded.
+   *
+   * A stored hash nobody verifies proves nothing — this is what makes the
+   * integrity claim real.
+   */
+  downloadEvidence: async (evidence) => {
+    const result = await downloadAndVerify(
+      STORAGE_BUCKETS.EVIDENCE,
+      evidence.file_url,
+      evidence.file_hash
+    );
+
+    if (!result.error) {
+      void supabase.rpc('append_custody_entry', {
+        p_evidence_id: evidence.id,
+        p_action: 'downloaded',
+        p_notes:
+          result.verified === false
+            ? 'INTEGRITY WARNING: file hash does not match the recorded value'
+            : 'Hash verified against the recorded value',
+      });
+    }
+    return result;
+  },
+
+  setFilters: (filters) => set({ filters }),
 }));

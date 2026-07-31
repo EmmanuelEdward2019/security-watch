@@ -54,7 +54,7 @@ interface MfaFactor { id: string; factor_type: string; status: string; }
 
 export function SettingsPage() {
   const user = useAuthStore((s) => s.user);
-  const deleteAccount = useAuthStore((s) => s.deleteAccount);
+  const requestAccountDeletion = useAuthStore((s) => s.requestAccountDeletion);
   const navigate = useNavigate();
 
   // --- Notification prefs ---
@@ -211,12 +211,17 @@ export function SettingsPage() {
       return;
     }
     setDeleting(true);
-    const { error } = await deleteAccount();
+    // Raised through an RPC that notifies every administrator. The previous
+    // client-side insert failed silently and "notified" the departing user, so
+    // erasure requests were dropped without anyone seeing them.
+    const { error } = await requestAccountDeletion();
     setDeleting(false);
     if (error) {
       toast.error(error);
     } else {
-      toast.success('Your account deletion request has been submitted. You have been signed out.');
+      toast.success(
+        'Your deletion request has been sent to our administrators and you have been signed out. We will confirm by email once your data is erased.'
+      );
       navigate('/login');
     }
   };

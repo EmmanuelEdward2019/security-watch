@@ -15,9 +15,8 @@ import {
   Card,
   CardContent,
 } from '@/components/ui';
-import { STORAGE_BUCKETS, uploadFile } from '@/lib/supabase';
+import { STORAGE_BUCKETS, uploadFile, buildObjectPath } from '@/lib/supabase';
 import toast from 'react-hot-toast';
-import { v4 as uuidv4 } from 'uuid';
 import { cn } from '@/utils/cn';
 
 const STEPS = [
@@ -144,7 +143,7 @@ export function CreatePropertyPage() {
     // Upload images
     const imageUrls: string[] = [];
     for (const { file } of imageFiles) {
-      const path = `${user.user_id}/${uuidv4()}-${file.name}`;
+      const path = buildObjectPath(user.user_id, file.name);
       const { url, error } = await uploadFile(STORAGE_BUCKETS.PROPERTY_IMAGES, path, file);
       if (error) {
         toast.error(`Failed to upload ${file.name}`);
@@ -181,7 +180,9 @@ export function CreatePropertyPage() {
 
     // Upload documents
     for (const { file } of documentFiles) {
-      const path = `${id}/${uuidv4()}-${file.name}`;
+      // Title documents are keyed by property: only the owner and admins can
+      // read them.
+      const path = buildObjectPath(id, file.name);
       const { url, error: docError } = await uploadFile(
         STORAGE_BUCKETS.PROPERTY_DOCUMENTS,
         path,

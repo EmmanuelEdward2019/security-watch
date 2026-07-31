@@ -2,22 +2,34 @@ import { create } from 'zustand';
 import type { Notification } from '@/types';
 import { supabase } from '@/lib/supabase';
 
+/**
+ * Notifications — read and acknowledge only.
+ *
+ * `createNotification` is gone. Any authenticated user could previously insert a
+ * notification, and client INSERT has since been revoked: notifications are
+ * raised by the SECURITY DEFINER RPCs and edge functions that perform the
+ * underlying action, so the inbox cannot be spammed or spoofed.
+ */
 interface NotificationState {
   notifications: Notification[];
   unreadCount: number;
   isLoading: boolean;
+  error: string | null;
+  channel: ReturnType<typeof supabase.channel> | null;
 
   fetchNotifications: (userId: string) => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: (userId: string) => Promise<void>;
   subscribeToNotifications: (userId: string) => void;
-  createNotification: (notification: Partial<Notification>) => Promise<void>;
+  unsubscribe: () => void;
 }
 
-export const useNotificationStore = create<NotificationState>((set) => ({
+export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
   isLoading: false,
+  error: null,
+  channel: null,
 
   fetchNotifications: async (userId) => {
     const { data, error } = await supabase
@@ -27,8 +39,12 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       .order('created_at', { ascending: false })
       .limit(50);
 
-    if (!error && data) {
-      const notifications = data as Notification[];
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    {
+      const notifications = (data ?? []) as Notification[];
       set({
         notifications,
         unreadCount: notifications.filter((n) => !n.read).length,
@@ -60,7 +76,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   },
 
   subscribeToNotifications: (userId) => {
-    supabase
+    const existing = get().channel;
+    if (existing) void supabase.removeChannel(existing);
+
+    const channel = supabase
       .channel(`notifications:${userId}`)
       .on(
         'postgres_changes',
@@ -79,9 +98,15 @@ export const useNotificationStore = create<NotificationState>((set) => ({
         }
       )
       .subscribe();
+
+    set({ channel });
   },
 
-  createNotification: async (notification) => {
-    await supabase.from('notifications').insert(notification);
+  unsubscribe: () => {
+    const channel = get().channel;
+    if (channel) {
+      void supabase.removeChannel(channel);
+      set({ channel: null });
+    }
   },
 }));

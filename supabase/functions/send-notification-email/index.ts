@@ -321,99 +321,219 @@ function renderTransactionalEmail(
 }
 
 // --- HTTP handler ---
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+//
+// SECURITY MODEL
+//
+// This endpoint used to accept `{ to, subject, html }` from anyone holding the
+// anon key — which ships in the browser bundle — with `Access-Control-Allow-
+// Origin: *`. That is an open relay: arbitrary HTML, to an arbitrary address,
+// sent from our verified sending domain.
+//
+// It now works like this:
+//
+//   * A caller must present a real user JWT. The anon key alone is not enough.
+//   * Only templates are renderable. The raw-HTML branch is gone, so the body
+//     of an email can never be attacker-controlled.
+//   * Recipients are addressed by user id, never by email address. The address
+//     is resolved server-side from `profiles`.
+//   * A non-admin caller may only email someone they share a case, a
+//     conversation, or a property enquiry with — enforced by asking the
+//     database, as the caller, via shares_context_with().
+//
+// Public, unauthenticated enquiry confirmations are handled by the
+// `public-enquiry` function instead, which owns both the insert and the email
+// so the recipient is never simply whatever the request asked for.
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-/** Legacy: raw HTML */
-interface LegacyPayload {
-  to: string;
-  subject: string;
-  html: string;
-  template?: never;
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? 'https://thesecuritywatch.com')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+function corsFor(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') ?? '';
+  const allowed = ALLOWED_ORIGINS.includes(origin)
+    || /^http:\/\/localhost:\d+$/.test(origin)
+    || /^http:\/\/127\.0\.0\.1:\d+$/.test(origin);
+
+  return {
+    'Access-Control-Allow-Origin': allowed ? origin : ALLOWED_ORIGINS[0] ?? '',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    Vary: 'Origin',
+  };
 }
 
-/** Templated transactional email */
-interface TemplatedPayload {
-  to: string;
+interface InvokeBody {
+  /** Preferred: resolve the address server-side from this user's profile. */
+  recipientUserId?: string;
+  /** Admin and service-role callers only. */
+  to?: string;
   template: TransactionalTemplateId;
   data?: TemplatePayload;
-  subject?: never;
-  html?: never;
 }
 
-type InvokeBody = LegacyPayload | TemplatedPayload;
+const VALID_TEMPLATES = new Set<string>([
+  'payment_received', 'payment_failed', 'case_assigned', 'case_status_update',
+  'new_message', 'verification_submitted', 'verification_approved',
+  'verification_rejected', 'security_service_request_received',
+  'security_service_request_admin', 'investigator_matched', 'report_ready',
+  'institution_report_published', 'generic_notification',
+]);
 
-function isTemplated(b: InvokeBody): b is TemplatedPayload {
-  return typeof (b as TemplatedPayload).template === 'string';
+function json(body: unknown, status: number, cors: Record<string, string>) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  });
 }
 
 Deno.serve(async (req: Request) => {
+  const cors = corsFor(req);
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: cors });
+  }
+  if (req.method !== 'POST') {
+    return json({ error: 'Method not allowed' }, 405, cors);
+  }
+
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+  const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!RESEND_API_KEY || !SUPABASE_URL || !ANON_KEY || !SERVICE_KEY) {
+    console.error('[send-notification-email] Missing required secrets');
+    return json({ error: 'Email service is not configured' }, 500, cors);
+  }
+
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token) {
+    return json({ error: 'Authentication required' }, 401, cors);
   }
 
   try {
     const body = (await req.json()) as InvokeBody;
 
-    if (!body.to) {
-      return new Response(JSON.stringify({ error: 'to is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!body?.template || !VALID_TEMPLATES.has(body.template)) {
+      return json({ error: 'A known template id is required' }, 400, cors);
     }
 
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-    if (!RESEND_API_KEY) {
-      return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const isServiceRole = token === SERVICE_KEY;
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    const from = getResendFrom();
-    let subject: string;
-    let html: string;
+    let recipientEmail: string | null = null;
+    let recipientName: string | undefined;
 
-    if (isTemplated(body)) {
-      const out = renderTransactionalEmail(body.template, body.data ?? {});
-      subject = out.subject;
-      html = out.html;
-    } else {
-      if (!body.subject || !body.html) {
-        return new Response(
-          JSON.stringify({ error: 'Either (template + optional data) or (subject + html) is required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+    if (isServiceRole) {
+      // Server-to-server: our own webhooks and scheduled jobs.
+      if (body.recipientUserId) {
+        const { data } = await admin
+          .from('profiles')
+          .select('email, full_name')
+          .eq('user_id', body.recipientUserId)
+          .maybeSingle();
+        recipientEmail = data?.email ?? null;
+        recipientName = data?.full_name ?? undefined;
+      } else if (body.to) {
+        recipientEmail = body.to;
       }
-      subject = body.subject;
-      html = body.html;
+    } else {
+      // Resolve the caller. A bare anon key has no user and is rejected here.
+      const asCaller = createClient(SUPABASE_URL, ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+
+      const { data: userData, error: userErr } = await asCaller.auth.getUser();
+      const caller = userData?.user;
+      if (userErr || !caller) {
+        return json({ error: 'Authentication required' }, 401, cors);
+      }
+
+      const { data: callerProfile } = await admin
+        .from('profiles')
+        .select('role, full_name, email')
+        .eq('user_id', caller.id)
+        .maybeSingle();
+
+      const callerIsAdmin = callerProfile?.role === 'admin';
+
+      if (body.recipientUserId) {
+        if (body.recipientUserId === caller.id) {
+          recipientEmail = callerProfile?.email ?? caller.email ?? null;
+          recipientName = callerProfile?.full_name ?? undefined;
+        } else if (callerIsAdmin) {
+          const { data } = await admin
+            .from('profiles')
+            .select('email, full_name')
+            .eq('user_id', body.recipientUserId)
+            .maybeSingle();
+          recipientEmail = data?.email ?? null;
+          recipientName = data?.full_name ?? undefined;
+        } else {
+          // Ask the database, as the caller, whether they share any context
+          // with the intended recipient. This is the check that stops the
+          // function being used to mail strangers.
+          const { data: shares, error: sharesErr } = await asCaller.rpc(
+            'shares_context_with',
+            { p_user_id: body.recipientUserId }
+          );
+          if (sharesErr || shares !== true) {
+            return json(
+              { error: 'You cannot send mail to that recipient' },
+              403,
+              cors
+            );
+          }
+          const { data } = await admin
+            .from('profiles')
+            .select('email, full_name')
+            .eq('user_id', body.recipientUserId)
+            .maybeSingle();
+          recipientEmail = data?.email ?? null;
+          recipientName = data?.full_name ?? undefined;
+        }
+      } else if (body.to) {
+        // A free-form address is an admin-only capability.
+        if (!callerIsAdmin) {
+          return json(
+            { error: 'Address recipients by recipientUserId, not by email' },
+            403,
+            cors
+          );
+        }
+        recipientEmail = body.to;
+      }
     }
+
+    if (!recipientEmail) {
+      return json({ error: 'Could not resolve a recipient' }, 400, cors);
+    }
+
+    const { subject, html } = renderTransactionalEmail(body.template, {
+      ...(body.data ?? {}),
+      // Never let the caller spoof the greeting name when we know the real one.
+      recipientName: recipientName ?? body.data?.recipientName,
+    });
 
     const result = await sendWithResend({
       apiKey: RESEND_API_KEY,
-      from,
-      to: body.to,
+      from: getResendFrom(),
+      to: recipientEmail,
       subject,
       html,
     });
 
     if (!result.ok) {
-      return new Response(JSON.stringify({ error: result.error }), {
-        status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      console.error('[send-notification-email] Resend failed:', result.error);
+      return json({ error: 'Email delivery failed' }, 502, cors);
     }
 
-    return new Response(JSON.stringify({ success: true, id: result.id }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ success: true, id: result.id }, 200, cors);
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('[send-notification-email] Unexpected error:', (err as Error).message);
+    return json({ error: 'Unexpected error' }, 500, cors);
   }
 });

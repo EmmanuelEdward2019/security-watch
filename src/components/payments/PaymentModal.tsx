@@ -1,167 +1,155 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { CheckCircle2, CreditCard } from 'lucide-react';
-import { Modal, Button } from '@/components/ui';
+import { useEffect, useState } from 'react';
+import { CreditCard, ShieldCheck, Lock } from 'lucide-react';
+import { Modal, Button, Spinner } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
-import { usePaymentStore } from '@/stores/paymentStore';
-import { sendTemplatedEmail } from '@/lib/email';
+import { startPayment, fetchServicePrices, formatCurrency } from '@/services/paymentService';
+import type { ServicePrice } from '@/types';
 import toast from 'react-hot-toast';
 
 export interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  amount: number;
-  currency?: string;
-  description?: string;
+  /** A key from the service_prices catalogue. The amount is priced server-side. */
+  purpose: string;
   caseId?: string;
   propertyId?: string;
-  onSuccess?: (reference: string) => void;
+  quantity?: number;
+  /** Where Paystack returns the user. Defaults to the payments screen. */
+  callbackPath?: string;
+  /** Shown above the price when the caller has extra context to give. */
+  note?: string;
 }
 
+/**
+ * Confirms and starts a checkout.
+ *
+ * The modal used to take an `amount` prop from the calling component, open the
+ * Paystack inline popup, and write a `completed` payment row from its callback.
+ * It now names a purpose and lets the server price it; the payment is settled by
+ * the webhook, so nothing here can assert a payment that did not happen.
+ */
 export function PaymentModal({
   isOpen,
   onClose,
-  amount,
-  currency = 'NGN',
-  description = 'Payment',
+  purpose,
   caseId,
   propertyId,
-  onSuccess,
+  quantity = 1,
+  callbackPath,
+  note,
 }: PaymentModalProps) {
   const user = useAuthStore((s) => s.user);
-  const { createPayment } = usePaymentStore();
+  const [price, setPrice] = useState<ServicePrice | null>(null);
+  const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-  const [success, setSuccess] = useState(false);
 
-  const handleConfirm = () => {
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+    setLoading(true);
+
+    void (async () => {
+      const { prices, error } = await fetchServicePrices();
+      if (cancelled) return;
+      if (error) toast.error(error);
+      setPrice(prices.find((p) => p.key === purpose) ?? null);
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, purpose]);
+
+  const total = price ? Number(price.amount) * quantity : 0;
+
+  const handleConfirm = async () => {
     if (!user) {
-      toast.error('You must be signed in to make a payment.');
+      toast.error('Sign in to make a payment.');
       return;
     }
+    if (!price) return;
 
-    if (!window.PaystackPop) {
-      toast.error('Payment SDK not loaded. Please refresh the page.');
-      return;
-    }
-
-    const ref = `tsw_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     setProcessing(true);
-
-    const handler = window.PaystackPop.setup({
-      key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string,
-      email: user.email,
-      amount: Math.round(amount * 100), // kobo
-      currency,
-      ref,
-      metadata: {
-        custom_fields: [
-          { display_name: 'Description', variable_name: 'description', value: description },
-          { display_name: 'Case ID', variable_name: 'case_id', value: caseId ?? '' },
-          { display_name: 'Property ID', variable_name: 'property_id', value: propertyId ?? '' },
-          { display_name: 'User ID', variable_name: 'user_id', value: user.user_id },
-        ],
-      },
-
-      callback: async (response) => {
-        await createPayment({
-          payer_id: user.user_id,
-          amount,
-          currency,
-          provider: 'paystack',
-          provider_reference: response.reference,
-          status: 'completed',
-          description,
-          case_id: caseId,
-          property_id: propertyId,
-        });
-
-        setProcessing(false);
-        setSuccess(true);
-        toast.success('Payment successful!');
-
-        // Confirmation email (non-blocking)
-        try {
-          await sendTemplatedEmail(user.email, 'payment_received', {
-            recipientName: user.full_name,
-            amount: `${currency} ${amount.toLocaleString()}`,
-            currency,
-            reference: response.reference,
-            dashboardUrl: `${window.location.origin}/app/payments/history`,
-          });
-        } catch {
-          // ignore
-        }
-
-        onSuccess?.(response.reference);
-      },
-
-      onClose: () => {
-        setProcessing(false);
-        toast('Payment cancelled.', { icon: 'ℹ️' });
-      },
+    const { data, error } = await startPayment({
+      purpose,
+      quantity,
+      caseId,
+      propertyId,
+      callbackPath,
     });
 
-    handler.openIframe();
-  };
+    if (error || !data) {
+      toast.error(error ?? 'Could not start the payment.');
+      setProcessing(false);
+      return;
+    }
 
-  const handleClose = () => {
-    setSuccess(false);
-    onClose();
+    window.location.href = data.authorizationUrl;
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Confirm Payment" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Confirm payment" size="md">
       <div className="space-y-4">
-        {success ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center gap-3 py-6 text-brand-600"
-          >
-            <CheckCircle2 size={56} />
-            <p className="font-semibold text-lg">Payment Successful!</p>
-            <p className="text-sm text-surface-500 text-center">
-              A confirmation email has been sent to {user?.email}
-            </p>
-          </motion.div>
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Spinner size="lg" />
+          </div>
+        ) : !price ? (
+          <p className="text-sm text-surface-600">
+            This service is not available for purchase right now. Please contact support.
+          </p>
         ) : (
           <>
+            {note && <p className="text-sm text-surface-600">{note}</p>}
+
             <div>
-              <p className="text-sm text-surface-500">Amount</p>
-              <p className="text-2xl font-bold text-surface-900">
-                {currency} {amount.toLocaleString()}
+              <p className="text-sm text-surface-500">{price.label}</p>
+              <p className="text-2xl font-bold text-surface-900 tabular-nums">
+                {formatCurrency(total, price.currency)}
               </p>
+              {quantity > 1 && price.unit && (
+                <p className="text-xs text-surface-400 mt-0.5">
+                  {quantity} × {formatCurrency(Number(price.amount), price.currency)} {price.unit}
+                </p>
+              )}
             </div>
-            {description && (
+
+            {price.description && (
               <div>
-                <p className="text-sm text-surface-500">Description</p>
-                <p className="text-surface-700">{description}</p>
+                <p className="text-sm text-surface-500">What this covers</p>
+                <p className="text-surface-700 text-sm">{price.description}</p>
               </div>
             )}
 
             <div className="flex items-start gap-3 p-3 rounded-lg bg-brand-50 border border-brand-200">
-              <CreditCard size={18} className="text-brand-600 mt-0.5 shrink-0" />
+              <ShieldCheck size={18} className="text-brand-600 mt-0.5 shrink-0" />
               <p className="text-xs text-brand-800">
-                You will be redirected to a secure Paystack popup to complete your payment.
+                You will complete payment on Paystack's secure checkout. Your card details never
+                reach our servers, and the payment is confirmed to us directly by the provider.
               </p>
             </div>
           </>
         )}
 
         <div className="flex gap-2 pt-2">
-          <Button variant="ghost" onClick={handleClose} className="flex-1">
-            {success ? 'Close' : 'Cancel'}
+          <Button variant="ghost" onClick={onClose} className="flex-1" disabled={processing}>
+            Cancel
           </Button>
-          {!success && (
-            <Button
-              onClick={handleConfirm}
-              loading={processing}
-              disabled={processing}
-              className="flex-1"
-            >
-              Pay {currency} {amount.toLocaleString()}
-            </Button>
-          )}
+          <Button
+            onClick={handleConfirm}
+            loading={processing}
+            disabled={processing || loading || !price}
+            className="flex-1"
+            icon={price ? Lock : CreditCard}
+          >
+            {processing
+              ? 'Opening checkout…'
+              : price
+                ? `Pay ${formatCurrency(total, price.currency)}`
+                : 'Unavailable'}
+          </Button>
         </div>
       </div>
     </Modal>

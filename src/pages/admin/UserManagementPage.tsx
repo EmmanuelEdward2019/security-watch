@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Eye } from 'lucide-react';
 import {
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui';
 import type { Column } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
+import { setUserRole, setKycStatus } from '@/services/adminService';
 import type { Profile, UserRole, KycStatus } from '@/types';
 import { USER_ROLE_LABELS } from '@/types';
 import { format } from 'date-fns';
@@ -34,16 +35,22 @@ export function UserManagementPage() {
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [updating, setUpdating] = useState(false);
 
-  useEffect(() => {
-    loadUsers();
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) toast.error(error.message);
+    else setUsers((data as Profile[]) ?? []);
+    setLoading(false);
   }, []);
 
-  async function loadUsers() {
-    setLoading(true);
-    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    if (!error) setUsers((data as Profile[]) ?? []);
-    setLoading(false);
-  }
+  useEffect(() => {
+    void loadUsers();
+  }, [loadUsers]);
+
+
 
   const filtered = users.filter((u) => {
     if (search) {
@@ -57,26 +64,35 @@ export function UserManagementPage() {
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     setUpdating(true);
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('user_id', userId);
+    // profiles.role is pinned by a database trigger: a direct UPDATE is reverted
+    // and recorded as an escalation attempt. Role changes go through an RPC that
+    // checks the caller is an admin and refuses to demote the last one.
+    const { error } = await setUserRole(userId, newRole);
     setUpdating(false);
-    if (error) toast.error(error.message);
-    else {
-      toast.success('Role updated');
-      setSelectedUser((prev) => (prev && prev.user_id === userId ? { ...prev, role: newRole } : prev));
-      loadUsers();
+
+    if (error) {
+      toast.error(error);
+      return;
     }
+    toast.success('Role updated. The change is recorded in the audit log.');
+    setSelectedUser((prev) => (prev && prev.user_id === userId ? { ...prev, role: newRole } : prev));
+    void loadUsers();
   };
 
   const handleKycAction = async (userId: string, status: KycStatus) => {
     setUpdating(true);
-    const { error } = await supabase.from('profiles').update({ kyc_status: status }).eq('user_id', userId);
+    const { error } = await setKycStatus(userId, status);
     setUpdating(false);
-    if (error) toast.error(error.message);
-    else {
-      toast.success(`KYC ${status}`);
-      setSelectedUser((prev) => (prev && prev.user_id === userId ? { ...prev, kyc_status: status } : prev));
-      loadUsers();
+
+    if (error) {
+      toast.error(error);
+      return;
     }
+    toast.success(`KYC ${status}.`);
+    setSelectedUser((prev) =>
+      prev && prev.user_id === userId ? { ...prev, kyc_status: status } : prev
+    );
+    void loadUsers();
   };
 
   const columns: Column<Profile>[] = [

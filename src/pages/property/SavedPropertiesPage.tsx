@@ -1,111 +1,199 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bookmark, MapPin, Eye, Trash2, Home } from 'lucide-react';
-import { Card, CardContent, Button, EmptyState } from '@/components/ui';
+import { Link, useNavigate } from 'react-router-dom';
+import { Bookmark, MapPin, Eye, Trash2, Home, BedDouble, Bath } from 'lucide-react';
+import { Card, CardContent, Button, EmptyState, Spinner, Badge } from '@/components/ui';
+import { useAuthStore } from '@/stores/authStore';
+import { fetchSavedProperties, unsaveProperty } from '@/services/propertyExtrasService';
+import { formatCurrency } from '@/services/paymentService';
+import type { SavedProperty } from '@/types';
+import { formatDistanceToNow } from 'date-fns';
+import toast from 'react-hot-toast';
 
-interface SavedProperty {
-  id: string;
-  title: string;
-  location: string;
-  price: string;
-}
-
-const initialSaved: SavedProperty[] = [
-  { id: '1', title: '3BR Apartment, Westlands', location: 'Westlands, Accra', price: 'GHS 2,500/mo' },
-  { id: '2', title: 'Studio Flat, CBD', location: 'Central Business District', price: 'GHS 1,200/mo' },
-  { id: '3', title: '2BR House, Osu', location: 'Osu, Accra', price: 'GHS 3,500/mo' },
-  { id: '4', title: '4BR Villa, East Legon', location: 'East Legon, Accra', price: 'GHS 8,000/mo' },
-  { id: '5', title: '1BR Apartment, Labone', location: 'Labone, Accra', price: 'GHS 1,800/mo' },
-  { id: '6', title: '2BR Apartment, Cantonments', location: 'Cantonments, Accra', price: 'GHS 3,000/mo' },
-];
-
+/**
+ * Saved listings.
+ *
+ * Previously a hardcoded array in local state, so a saved property vanished on
+ * reload and nothing was persisted. Backed by the `saved_properties` table now,
+ * which RLS scopes to the owning user.
+ */
 export default function SavedPropertiesPage() {
-  const [saved, setSaved] = useState(initialSaved);
+  const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
+  const [saved, setSaved] = useState<SavedProperty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [removing, setRemoving] = useState<string | null>(null);
 
-  const handleRemove = (id: string) => {
-    setSaved((prev) => prev.filter((p) => p.id !== id));
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const { saved: items, error } = await fetchSavedProperties(user.user_id);
+    if (error) toast.error(error);
+    setSaved(items);
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleRemove = async (propertyId: string) => {
+    if (!user) return;
+    setRemoving(propertyId);
+    const { error } = await unsaveProperty(user.user_id, propertyId);
+    setRemoving(null);
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setSaved((prev) => prev.filter((s) => s.property_id !== propertyId));
+    toast.success('Removed from saved listings.');
   };
 
-  return (
-    <div className="min-h-screen bg-surface-50">
-      <div className="container mx-auto px-4 py-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
-        >
-          <h1 className="text-2xl font-bold text-surface-900 flex items-center gap-2">
-            <Bookmark size={24} className="text-forest-600" />
-            Saved Properties
-          </h1>
-          <p className="text-surface-600 mt-1">
-            Properties you've bookmarked for later
-          </p>
-        </motion.div>
-
-        {saved.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card>
-              <CardContent>
-                <EmptyState
-                  icon={Bookmark}
-                  title="No saved properties"
-                  description="Properties you bookmark will appear here. Browse listings to find your next home."
-                />
-              </CardContent>
-            </Card>
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"
-          >
-            {saved.map((property, i) => (
-              <motion.div
-                key={property.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 * i }}
-                layout
-              >
-                <Card hover>
-                  <div className="h-40 bg-surface-100 flex items-center justify-center">
-                    <Home size={40} className="text-surface-300" strokeWidth={1.5} />
-                  </div>
-                  <CardContent>
-                    <h3 className="font-semibold text-surface-900">{property.title}</h3>
-                    <p className="text-sm text-surface-500 flex items-center gap-1 mt-1">
-                      <MapPin size={14} />
-                      {property.location}
-                    </p>
-                    <p className="text-lg font-bold text-forest-600 mt-2">{property.price}</p>
-                    <div className="flex gap-2 mt-3">
-                      <Button variant="primary" size="sm" icon={Eye} className="flex-1">
-                        View
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        icon={Trash2}
-                        className="flex-1"
-                        onClick={() => handleRemove(property.id)}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </motion.div>
-        )}
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner size="lg" />
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="space-y-6"
+    >
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-surface-900">Saved properties</h1>
+          <p className="text-surface-500 mt-1">
+            Listings you have bookmarked. Verification status updates as our team reviews each
+            property.
+          </p>
+        </div>
+        <span className="text-sm text-surface-500 tabular-nums">
+          {saved.length} {saved.length === 1 ? 'listing' : 'listings'}
+        </span>
+      </div>
+
+      {saved.length === 0 ? (
+        <EmptyState
+          icon={Bookmark}
+          title="Nothing saved yet"
+          description="Browse the marketplace and use the bookmark button on a listing to keep it here."
+          action={
+            <Button onClick={() => navigate('/app/property')} icon={Home}>
+              Browse properties
+            </Button>
+          }
+        />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {saved.map((item) => {
+            const property = item.property;
+            if (!property) return null;
+
+            return (
+              <Card key={item.id} className="overflow-hidden flex flex-col">
+                {property.images?.[0] ? (
+                  <img
+                    src={property.images[0]}
+                    alt={property.title}
+                    className="h-40 w-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="h-40 w-full bg-surface-100 flex items-center justify-center">
+                    <Home size={32} className="text-surface-300" />
+                  </div>
+                )}
+
+                <CardContent className="flex-1 flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="font-semibold text-surface-900 line-clamp-2">{property.title}</h2>
+                    <Badge
+                      variant={
+                        property.status === 'verified'
+                          ? 'success'
+                          : property.status === 'pending'
+                            ? 'warning'
+                            : 'default'
+                      }
+                    >
+                      {property.status}
+                    </Badge>
+                  </div>
+
+                  <p className="text-sm text-surface-500 flex items-center gap-1.5">
+                    <MapPin size={14} className="shrink-0" />
+                    <span className="truncate">{property.location}</span>
+                  </p>
+
+                  <p className="text-lg font-bold text-surface-900 tabular-nums">
+                    {formatCurrency(Number(property.price), property.currency)}
+                    {property.listing_type === 'rent' && (
+                      <span className="text-sm font-normal text-surface-500"> / year</span>
+                    )}
+                  </p>
+
+                  {(property.bedrooms || property.bathrooms) && (
+                    <div className="flex items-center gap-4 text-sm text-surface-500">
+                      {property.bedrooms ? (
+                        <span className="flex items-center gap-1">
+                          <BedDouble size={14} /> {property.bedrooms}
+                        </span>
+                      ) : null}
+                      {property.bathrooms ? (
+                        <span className="flex items-center gap-1">
+                          <Bath size={14} /> {property.bathrooms}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-surface-400 mt-auto">
+                    Saved {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
+                  </p>
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => navigate(`/app/property/${property.id}`)}
+                      icon={Eye}
+                    >
+                      View
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={Trash2}
+                      loading={removing === property.id}
+                      disabled={removing !== null}
+                      onClick={() => void handleRemove(property.id)}
+                      aria-label={`Remove ${property.title} from saved`}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {saved.length > 0 && (
+        <p className="text-sm text-surface-500">
+          Considering one of these?{' '}
+          <Link to="/app/property/verify" className="text-brand-600 hover:underline">
+            Request an independent title verification
+          </Link>{' '}
+          before you pay anything.
+        </p>
+      )}
+    </motion.div>
   );
 }

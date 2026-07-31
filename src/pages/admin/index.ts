@@ -8,3 +8,4 @@ export { AnalyticsPage } from './AnalyticsPage';
 export { default as PricingControlPage } from './PricingControlPage';
 export { default as InstitutionReportsPage } from './InstitutionReportsPage';
 export { default as SecurityRequestsPage } from './SecurityRequestsPage';
+export { default as AuditLogPage } from './AuditLogPage';

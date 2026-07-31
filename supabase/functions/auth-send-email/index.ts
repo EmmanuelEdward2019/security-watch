@@ -370,22 +370,35 @@ Deno.serve(async (req: Request) => {
   const payloadText = await req.text();
   const headers = Object.fromEntries(req.headers);
 
-  // -- Verify webhook signature (with fallback) --
+  // -- Verify webhook signature --
+  //
+  // This function runs with verify_jwt = false because Supabase Auth
+  // authenticates itself with a Standard Webhooks signature rather than a JWT.
+  // That signature is therefore the ONLY thing standing between this endpoint
+  // and the open internet.
+  //
+  // There used to be a fallback here that parsed the body as plain JSON when
+  // verification threw. That made the signature advisory: anyone who knew the
+  // URL could POST a crafted payload and have us send a branded, legitimate
+  // looking confirmation or password-reset email, from our verified domain, to
+  // any address they chose — a phishing relay wearing our own branding, plus
+  // Resend quota burn and sender-reputation damage.
+  //
+  // An unverified request now gets 200 and no email. 200 keeps Supabase Auth
+  // from aborting the user's signup/login when OUR secret is misconfigured;
+  // sending nothing is the correct response to an unauthenticated caller.
   let payload: HookPayload;
   try {
     const wh = new Webhook(normalizeHookSecret(rawSecret));
     payload = wh.verify(payloadText, headers) as HookPayload;
-    console.log('[auth-send-email] Webhook signature verified ✓');
   } catch (verifyErr) {
-    console.warn('[auth-send-email] Webhook signature verification failed:', verifyErr);
-    console.warn('[auth-send-email] Falling back to raw JSON parse (check SEND_EMAIL_HOOK_SECRET)');
-
-    try {
-      payload = JSON.parse(payloadText) as HookPayload;
-    } catch (parseErr) {
-      console.error('[auth-send-email] Could not parse payload at all:', parseErr);
-      return ok();
-    }
+    console.error(
+      '[auth-send-email] REJECTED — webhook signature invalid or missing:',
+      (verifyErr as Error).message,
+      '· If legitimate auth emails have stopped, SEND_EMAIL_HOOK_SECRET does not match',
+      'Authentication → Hooks → Send Email → signing secret. Nothing was sent.'
+    );
+    return ok();
   }
 
   // Safety first: everything else inside try/catch so we NEVER return 500

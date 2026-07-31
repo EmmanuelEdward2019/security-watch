@@ -57,7 +57,7 @@ export function LandlordDashboard() {
     if (error) toast.error(error);
     else {
       toast.success('Request accepted');
-      user && fetchRequests(user.user_id, true);
+      if (user) void fetchRequests(user.user_id, true);
     }
   };
 
@@ -66,7 +66,7 @@ export function LandlordDashboard() {
     if (error) toast.error(error);
     else {
       toast.success('Request rejected');
-      user && fetchRequests(user.user_id, true);
+      if (user) void fetchRequests(user.user_id, true);
     }
   };
 
@@ -76,7 +76,7 @@ export function LandlordDashboard() {
     if (error) toast.error(error);
     else {
       toast.success('Property removed');
-      user && fetchProperties(user.user_id);
+      if (user) void fetchProperties(user.user_id);
     }
   };
 

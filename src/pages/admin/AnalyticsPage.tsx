@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Download } from 'lucide-react';
 import { Card, CardHeader, CardContent, Button } from '@/components/ui';
@@ -18,8 +18,9 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { supabase } from '@/lib/supabase';
-import { format, subMonths } from 'date-fns';
+import { fetchPlatformStats, fetchMonthlyTrends, fetchInstitutionRankings } from '@/services/adminService';
+import { format, subMonths, differenceInCalendarMonths } from 'date-fns';
+import toast from 'react-hot-toast';
 
 const COLORS = ['#166534', '#15803d', '#4ade80', '#86efac', '#bbf7d0', '#dcfce7'];
 
@@ -35,98 +36,68 @@ export function AnalyticsPage() {
   const [mediaByInstitution, setMediaByInstitution] = useState<{ name: string; count: number }[]>([]);
   const [topInstitutions, setTopInstitutions] = useState<{ name: string; score: number }[]>([]);
 
-  useEffect(() => {
-    loadAnalytics();
-  }, [dateFrom, dateTo]);
-
-  async function loadAnalytics() {
+  /**
+   * Analytics from SQL aggregates.
+   *
+   * This used to pull the whole of cases, payments, profiles, properties,
+   * media_reports and performance_scores into the browser on every date change,
+   * then bucket them in JavaScript. The aggregates now run in Postgres and only
+   * the plotted numbers cross the wire.
+   */
+  const loadAnalytics = useCallback(async () => {
     setLoading(true);
-    const from = new Date(dateFrom);
-    const to = new Date(dateTo);
 
-    const { data: cases } = await supabase.from('cases').select('*');
-    const { data: payments } = await supabase.from('payments').select('*');
-    const { data: profiles } = await supabase.from('profiles').select('*');
-    const { data: properties } = await supabase.from('properties').select('*');
-    const { data: media } = await supabase.from('media_reports').select('*, institution:institutions(*)');
-    const { data: scores } = await supabase.from('performance_scores').select('*, institution:institutions(*)');
-
-    const statusCount: Record<string, number> = {};
-    cases?.forEach((c) => {
-      statusCount[c.status] = (statusCount[c.status] ?? 0) + 1;
-    });
-    setCasesByStatus(
-      Object.entries(statusCount).map(([name, value]) => ({ name: name.replace(/_/g, ' '), value }))
+    const monthSpan = Math.max(
+      1,
+      Math.min(
+        24,
+        differenceInCalendarMonths(new Date(dateTo), new Date(dateFrom)) + 1
+      )
     );
 
-    const months: { month: string; date: Date }[] = [];
-    for (let m = new Date(from.getFullYear(), from.getMonth(), 1); m <= to; m.setMonth(m.getMonth() + 1)) {
-      months.push({ month: format(m, 'MMM yy'), date: new Date(m) });
+    const [statsResult, trendsResult, rankingsResult] = await Promise.all([
+      fetchPlatformStats(),
+      fetchMonthlyTrends(monthSpan),
+      fetchInstitutionRankings(),
+    ]);
+
+    if (statsResult.error) toast.error(statsResult.error);
+
+    const platform = statsResult.stats;
+    if (platform) {
+      setCasesByStatus(
+        Object.entries(platform.casesByStatus ?? {}).map(([name, value]) => ({
+          name: name.replace(/_/g, ' '),
+          value: Number(value),
+        }))
+      );
     }
 
-    const casesTrendData = months.map(({ month, date }) => ({
-      month,
-      count: cases?.filter((c) => {
-        const d = new Date(c.created_at);
-        return d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear();
-      }).length ?? 0,
-    }));
-    setCasesTrend(casesTrendData);
+    setCasesTrend(trendsResult.trends.map((t) => ({ month: t.month, count: t.cases })));
+    setRevenueByMonth(trendsResult.trends.map((t) => ({ month: t.month, amount: t.revenue })));
+    setUserGrowth(trendsResult.trends.map((t) => ({ month: t.month, count: t.users })));
+    setPropertyTrend(trendsResult.trends.map((t) => ({ month: t.month, count: t.properties })));
 
-    const revenueMonths = months.map(({ month, date }) => {
-      const amount = payments
-        ?.filter((p) => p.status === 'completed')
-        ?.filter((p) => {
-          const d = new Date(p.created_at);
-          return d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear();
-        })
-        .reduce((s, p) => s + p.amount, 0) ?? 0;
-      return { month, amount };
-    });
-    setRevenueByMonth(revenueMonths);
-
-    const userMonths = months.map(({ month, date }) => ({
-      month,
-      count: profiles?.filter((p) => {
-        const d = new Date(p.created_at);
-        return d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear();
-      }).length ?? 0,
-    }));
-    setUserGrowth(userMonths);
-
-    const propMonths = months.map(({ month, date }) => ({
-      month,
-      count: properties?.filter((p) => {
-        const d = new Date(p.created_at);
-        return d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear();
-      }).length ?? 0,
-    }));
-    setPropertyTrend(propMonths);
-
-    const instCount: Record<string, number> = {};
-    media?.forEach((m) => {
-      const name = (m.institution as { name?: string })?.name ?? 'Unknown';
-      instCount[name] = (instCount[name] ?? 0) + 1;
-    });
+    const ranked = rankingsResult.rankings;
     setMediaByInstitution(
-      Object.entries(instCount).map(([name, count]) => ({ name, count })).slice(0, 8)
-    );
-
-    const instScores: Record<string, number[]> = {};
-    (scores ?? []).forEach((s) => {
-      const name = (s.institution as { name?: string })?.name ?? 'Unknown';
-      if (!instScores[name]) instScores[name] = [];
-      instScores[name].push(s.overall_score ?? 0);
-    });
-    setTopInstitutions(
-      Object.entries(instScores)
-        .map(([name, arr]) => ({ name, score: arr.reduce((a, b) => a + b, 0) / arr.length }))
-        .sort((a, b) => b.score - a.score)
+      ranked
+        .filter((r) => r.published_reports > 0)
         .slice(0, 8)
+        .map((r) => ({ name: r.name, count: r.published_reports }))
+    );
+    setTopInstitutions(
+      ranked
+        .filter((r) => r.evaluations > 0)
+        .slice(0, 8)
+        .map((r) => ({ name: r.name, score: r.avg_score }))
     );
 
     setLoading(false);
-  }
+  }, [dateFrom, dateTo]);
+
+  useEffect(() => {
+    void loadAnalytics();
+  }, [loadAnalytics]);
 
   const handleExport = () => {
     const data = {

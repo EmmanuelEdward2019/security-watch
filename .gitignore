@@ -30,3 +30,6 @@ dist-ssr
 *.sw?
 .vercel
 .env*.local
+
+# Database backups — contain personal data (emails, names). Never commit.
+backups/

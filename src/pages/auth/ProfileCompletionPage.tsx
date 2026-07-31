@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
-import { uploadFile, STORAGE_BUCKETS } from '@/lib/supabase';
+import { uploadFile, buildObjectPath, STORAGE_BUCKETS } from '@/lib/supabase';
 import { Button, Input, TextArea, FileUpload } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import type { UploadedFile } from '@/components/ui';
@@ -66,7 +66,7 @@ export function ProfileCompletionPage() {
 
     let avatarUrl: string | undefined;
     if (avatarFiles.length > 0 && avatarFiles[0].file) {
-      const path = `${user?.user_id}/avatar-${Date.now()}.${avatarFiles[0].file.name.split('.').pop()}`;
+      const path = buildObjectPath(user?.user_id ?? '', avatarFiles[0].file.name);
       const { url, error } = await uploadFile(
         STORAGE_BUCKETS.AVATARS,
         path,

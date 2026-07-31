@@ -9,16 +9,34 @@ import {
   ChevronUp,
   User,
   Clock,
+  Download,
+  ShieldCheck,
+  ShieldAlert,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import toast from 'react-hot-toast';
+import { Button } from '@/components/ui';
+import { useCaseStore } from '@/stores/caseStore';
 import type { Evidence, CustodyLog } from '@/types';
 import { cn } from '@/utils/cn';
 
-function getFileIcon(fileType: string) {
-  if (fileType.startsWith('image/')) return Image;
-  if (fileType.startsWith('video/')) return Video;
-  if (fileType.startsWith('audio/')) return Music;
-  return FileText;
+/**
+ * Resolved from a module-scope table rather than a function called during
+ * render — the React Compiler treats a component produced mid-render as a new
+ * component type each pass, which forces a remount.
+ */
+const FILE_ICONS = {
+  image: Image,
+  video: Video,
+  audio: Music,
+  file: FileText,
+} as const;
+
+function fileIconKey(fileType: string): keyof typeof FILE_ICONS {
+  if (fileType?.startsWith('image/')) return 'image';
+  if (fileType?.startsWith('video/')) return 'video';
+  if (fileType?.startsWith('audio/')) return 'audio';
+  return 'file';
 }
 
 function formatFileSize(bytes: number): string {
@@ -33,6 +51,13 @@ export interface EvidenceTimelineProps {
   className?: string;
 }
 
+/**
+ * Filed evidence, newest first, with its chain of custody.
+ *
+ * Opening a file downloads it and re-hashes the bytes against the SHA-256
+ * recorded at upload. A hash nobody verifies proves nothing, so the result is
+ * shown on the item and the access is appended to the custody log.
+ */
 export function EvidenceTimeline({
   evidence,
   uploaderNames = {},
@@ -65,8 +90,38 @@ interface EvidenceTimelineItemProps {
 
 function EvidenceTimelineItem({ item, index, uploaderName }: EvidenceTimelineItemProps) {
   const [custodyExpanded, setCustodyExpanded] = useState(false);
-  const Icon = getFileIcon(item.file_type);
+  const [opening, setOpening] = useState(false);
+  const [integrity, setIntegrity] = useState<boolean | null>(null);
+  const downloadEvidence = useCaseStore((s) => s.downloadEvidence);
+
+  const Icon = FILE_ICONS[fileIconKey(item.file_type)];
   const hasCustody = item.chain_of_custody?.length > 0;
+
+  const handleOpen = async () => {
+    setOpening(true);
+    const { blob, verified, error } = await downloadEvidence(item);
+    setOpening(false);
+
+    if (error) {
+      toast.error(`Could not open that file: ${error}`);
+      return;
+    }
+
+    setIntegrity(verified);
+
+    if (verified === false) {
+      toast.error(
+        'INTEGRITY FAILURE — this file no longer matches the hash recorded when it was filed. Do not rely on it, and report this immediately.',
+        { duration: 10_000 }
+      );
+    }
+
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
+  };
 
   return (
     <motion.div
@@ -107,9 +162,33 @@ function EvidenceTimelineItem({ item, index, uploaderName }: EvidenceTimelineIte
               )}
               {item.file_hash && (
                 <p className="mt-1 text-xs text-surface-400 font-mono truncate" title={item.file_hash}>
-                  Hash: {item.file_hash}
+                  SHA-256: {item.file_hash}
                 </p>
               )}
+
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={Download}
+                  loading={opening}
+                  disabled={opening}
+                  onClick={() => void handleOpen()}
+                >
+                  Open &amp; verify
+                </Button>
+
+                {integrity === true && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-brand-700">
+                    <ShieldCheck size={13} /> Integrity verified
+                  </span>
+                )}
+                {integrity === false && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-700">
+                    <ShieldAlert size={13} /> Hash mismatch — do not rely on this file
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -158,7 +237,7 @@ function CustodyLogEntry({ log }: { log: CustodyLog }) {
       <span className="text-surface-500 shrink-0">
         {format(new Date(log.timestamp), 'MMM d, HH:mm')}
       </span>
-      <span className="font-medium text-surface-700">{log.action}</span>
+      <span className="font-medium text-surface-700 capitalize">{log.action}</span>
       <span className="text-surface-600">by {log.user_name}</span>
       {log.notes && (
         <span className="text-surface-500 italic">— {log.notes}</span>

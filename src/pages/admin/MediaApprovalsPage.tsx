@@ -15,7 +15,7 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
 export function MediaApprovalsPage() {
-  const { mediaReports, fetchMediaReports, updateMediaReport } = useMediaStore();
+  const { mediaReports, fetchMediaReports, reviewMediaReport } = useMediaStore();
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<MediaReport | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -34,22 +34,46 @@ export function MediaApprovalsPage() {
     }
   }, [selected]);
 
+  /**
+   * Records the moderation decision.
+   *
+   * Publication used to be a plain UPDATE the reporter themselves was allowed to
+   * make, so unreviewed allegations about named institutions could go live
+   * without an admin seeing them. It is an admin-only RPC now, which also
+   * notifies the reporter and writes the audit entry.
+   */
   const handleAction = async (status: MediaStatus) => {
     if (!selected) return;
     setProcessing(true);
-    const updates: Partial<MediaReport> = { status };
-    if (status === 'published') {
-      updates.title = editTitle;
-      updates.description = editDescription;
+
+    // Any admin copy-edits are saved before the status moves, because a report
+    // stops being editable once it leaves review.
+    if (
+      status === 'published' &&
+      (editTitle !== selected.title || editDescription !== selected.description)
+    ) {
+      await useMediaStore.getState().updateMediaReport(selected.id, {
+        title: editTitle,
+        description: editDescription,
+      });
     }
-    const { error } = await updateMediaReport(selected.id, updates);
+
+    const { error } = await reviewMediaReport(selected.id, status);
     setProcessing(false);
-    if (error) toast.error(error);
-    else {
-      toast.success(`Report ${status}`);
-      setSelected(null);
-      fetchMediaReports({ status: 'pending_review' });
+
+    if (error) {
+      toast.error(error);
+      return;
     }
+    toast.success(
+      status === 'published'
+        ? 'Published to the public archive.'
+        : status === 'approved'
+          ? 'Approved.'
+          : 'Rejected. The reporter has been notified.'
+    );
+    setSelected(null);
+    void fetchMediaReports({ status: 'pending_review' });
   };
 
   const columns: Column<MediaReport>[] = [

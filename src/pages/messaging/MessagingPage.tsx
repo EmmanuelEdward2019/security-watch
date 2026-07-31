@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useMessageStore } from '@/stores/messageStore';
 import { Button, Modal, Avatar } from '@/components/ui';
 import { ConversationList, ChatWindow, MessageInput } from '@/components/messaging';
-import { uploadFile, STORAGE_BUCKETS } from '@/lib/supabase';
+import { uploadFile, buildObjectPath, STORAGE_BUCKETS } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
 import type { Conversation } from '@/types';
 import { cn } from '@/utils/cn';
@@ -94,14 +94,23 @@ export function MessagingPage() {
       let fileUrl: string | undefined;
       let fileName: string | undefined;
       if (file) {
-        const path = `${currentConversation.id}/${Date.now()}-${file.name}`;
-        const { url, error } = await uploadFile(STORAGE_BUCKETS.CHAT_FILES, path, file);
+        // Keyed by conversation: the chat-files policy grants only that
+        // conversation's participants. Previously any logged-in account could
+        // read every chat attachment in the platform.
+        const path = buildObjectPath(currentConversation.id, file.name);
+        const { path: storedPath, error } = await uploadFile(
+          STORAGE_BUCKETS.CHAT_FILES,
+          path,
+          file
+        );
         if (error) {
-          toast.error('Failed to upload file');
+          toast.error(`Could not upload that file: ${error}`);
           setSending(false);
           return;
         }
-        fileUrl = url;
+        // The object path is stored, not a URL — the bucket is private and reads
+        // go through a short-lived signed URL.
+        fileUrl = storedPath;
         fileName = file.name;
       }
       const { error } = await sendMessage(

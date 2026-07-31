@@ -1,9 +1,47 @@
+/**
+ * Suggests verified investigators for a case, ranked by fit.
+ *
+ * SECURITY MODEL
+ *
+ * This function holds the service-role key, which bypasses RLS entirely. It
+ * previously accepted any `case_id` from any caller and, on a good enough
+ * score, silently reassigned the case — meaning anyone with the anon key from
+ * the browser bundle could move real criminal cases onto an investigator of
+ * their choosing and hand them the case file.
+ *
+ * Now:
+ *   * The caller must present a real user JWT and be an administrator.
+ *   * The function only ever *suggests*. Assignment goes through the
+ *     admin_assign_case RPC, which re-checks the assignee's role and
+ *     verification status. A human decides who sees a murder or kidnapping
+ *     file — the scorer does not.
+ */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? 'https://thesecuritywatch.com')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+function corsFor(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') ?? '';
+  const allowed = ALLOWED_ORIGINS.includes(origin)
+    || /^http:\/\/localhost:\d+$/.test(origin)
+    || /^http:\/\/127\.0\.0\.1:\d+$/.test(origin);
+  return {
+    'Access-Control-Allow-Origin': allowed ? origin : ALLOWED_ORIGINS[0] ?? '',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    Vary: 'Origin',
+  };
+}
+
+function json(body: unknown, status: number, cors: Record<string, string>) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  });
+}
 
 interface Investigator {
   id: string;
@@ -14,6 +52,7 @@ interface Investigator {
   rating: number;
   total_cases: number;
   verification_status: string;
+  is_available: boolean;
 }
 
 interface CaseData {
@@ -22,161 +61,205 @@ interface CaseData {
   urgency: string;
 }
 
-function calculateMatchScore(investigator: Investigator, caseData: CaseData): number {
-  let score = 0;
+interface ScoreBreakdown {
+  specialization: number;
+  location: number;
+  experience: number;
+  rating: number;
+  availability: number;
+  urgency: number;
+}
 
-  // Specialization match (0-30 points)
-  const categoryMap: Record<string, string[]> = {
-    fraud: ['fraud', 'financial_crimes', 'cybercrime'],
-    robbery: ['robbery', 'theft', 'property_crime'],
-    murder: ['homicide', 'violent_crime'],
-    assault: ['assault', 'violent_crime'],
-    domestic_dispute: ['domestic', 'family_law', 'mediation'],
-    land_dispute: ['property', 'land', 'real_estate'],
-    cybercrime: ['cybercrime', 'digital_forensics', 'fraud'],
-    corruption: ['corruption', 'public_sector', 'whistleblower'],
-    kidnapping: ['kidnapping', 'missing_persons', 'violent_crime'],
-    missing_person: ['missing_persons', 'search_rescue'],
+const CATEGORY_SPECIALISATIONS: Record<string, string[]> = {
+  fraud: ['fraud', 'financial_crimes', 'cybercrime'],
+  robbery: ['robbery', 'theft', 'property_crime'],
+  murder: ['homicide', 'violent_crime'],
+  assault: ['assault', 'violent_crime'],
+  domestic_dispute: ['domestic', 'family_law', 'mediation'],
+  land_dispute: ['property', 'land', 'real_estate'],
+  cybercrime: ['cybercrime', 'digital_forensics', 'fraud'],
+  corruption: ['corruption', 'public_sector', 'whistleblower'],
+  kidnapping: ['kidnapping', 'missing_persons', 'violent_crime'],
+  missing_person: ['missing_persons', 'search_rescue'],
+};
+
+function scoreInvestigator(
+  investigator: Investigator,
+  caseData: CaseData
+): { total: number; breakdown: ScoreBreakdown } {
+  const breakdown: ScoreBreakdown = {
+    specialization: 0,
+    location: 0,
+    experience: 0,
+    rating: 0,
+    availability: 0,
+    urgency: 0,
   };
 
-  const relevantSpecs = categoryMap[caseData.category] || [];
-  const matchingSpecs = investigator.specialization.filter((s) =>
-    relevantSpecs.some((rs) => s.toLowerCase().includes(rs))
+  // Specialization overlap (0–30)
+  const relevant = CATEGORY_SPECIALISATIONS[caseData.category] ?? [];
+  const matching = (investigator.specialization ?? []).filter((s) =>
+    relevant.some((r) => s.toLowerCase().includes(r))
   );
-  score += Math.min(matchingSpecs.length * 10, 30);
+  breakdown.specialization = Math.min(matching.length * 10, 30);
 
-  // Location proximity (0-25 points)
-  if (investigator.service_area?.toLowerCase().includes(caseData.location?.toLowerCase() || '')) {
-    score += 25;
-  } else if (investigator.service_area && caseData.location) {
-    const areaWords = investigator.service_area.toLowerCase().split(/[\s,]+/);
-    const locWords = caseData.location.toLowerCase().split(/[\s,]+/);
+  // Location proximity (0–25)
+  const area = investigator.service_area?.toLowerCase() ?? '';
+  const location = caseData.location?.toLowerCase() ?? '';
+  if (area && location && area.includes(location)) {
+    breakdown.location = 25;
+  } else if (area && location) {
+    const areaWords = area.split(/[\s,]+/).filter(Boolean);
+    const locWords = location.split(/[\s,]+/).filter(Boolean);
     const overlap = areaWords.filter((w) => locWords.includes(w));
-    score += Math.min(overlap.length * 8, 20);
+    breakdown.location = Math.min(overlap.length * 8, 20);
   }
 
-  // Experience (0-20 points)
-  score += Math.min(investigator.experience_years * 2, 20);
+  // Experience (0–20)
+  breakdown.experience = Math.min((investigator.experience_years ?? 0) * 2, 20);
 
-  // Rating (0-15 points)
-  score += (investigator.rating / 5) * 15;
+  // Reputation (0–15)
+  breakdown.rating = ((investigator.rating ?? 0) / 5) * 15;
 
-  // Availability - fewer active cases = more available (0-10 points)
-  const availabilityScore = Math.max(0, 10 - investigator.total_cases);
-  score += availabilityScore;
+  // Capacity — a lighter caseload scores better (0–10)
+  breakdown.availability = Math.max(0, 10 - (investigator.total_cases ?? 0));
 
-  // Urgency bonus for highly rated agents
-  if (caseData.urgency === 'critical' && investigator.rating >= 4) {
-    score += 10;
-  } else if (caseData.urgency === 'high' && investigator.rating >= 3.5) {
-    score += 5;
+  // Urgency weighting toward proven performers
+  if (caseData.urgency === 'critical' && (investigator.rating ?? 0) >= 4) {
+    breakdown.urgency = 10;
+  } else if (caseData.urgency === 'high' && (investigator.rating ?? 0) >= 3.5) {
+    breakdown.urgency = 5;
   }
 
-  return Math.round(score * 100) / 100;
+  const total = Object.values(breakdown).reduce((a, b) => a + b, 0);
+  return { total: Math.round(total * 100) / 100, breakdown };
 }
 
 Deno.serve(async (req: Request) => {
+  const cors = corsFor(req);
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: cors });
+  }
+  if (req.method !== 'POST') {
+    return json({ error: 'Method not allowed' }, 405, cors);
+  }
+
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+  const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!SUPABASE_URL || !ANON_KEY || !SERVICE_KEY) {
+    return json({ error: 'Function is not configured' }, 500, cors);
+  }
+
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) {
+    return json({ error: 'Authentication required' }, 401, cors);
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    const isServiceRole = token === SERVICE_KEY;
+
+    // --- Authorize the caller before touching the service-role client ---
+    if (!isServiceRole) {
+      const asCaller = createClient(SUPABASE_URL, ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      const { data: userData, error: userErr } = await asCaller.auth.getUser();
+      if (userErr || !userData?.user) {
+        return json({ error: 'Authentication required' }, 401, cors);
+      }
+
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('role')
+        .eq('user_id', userData.user.id)
+        .maybeSingle();
+
+      if (profile?.role !== 'admin') {
+        return json({ error: 'Administrators only' }, 403, cors);
+      }
+    }
 
     const { case_id } = await req.json();
-    if (!case_id) {
-      return new Response(JSON.stringify({ error: 'case_id is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!case_id || typeof case_id !== 'string') {
+      return json({ error: 'case_id is required' }, 400, cors);
     }
 
-    const { data: caseData, error: caseError } = await supabase
+    const { data: caseData, error: caseError } = await admin
       .from('cases')
-      .select('*')
+      .select('id, title, category, location, urgency, status')
       .eq('id', case_id)
-      .single();
+      .maybeSingle();
 
     if (caseError || !caseData) {
-      return new Response(JSON.stringify({ error: 'Case not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ error: 'Case not found' }, 404, cors);
     }
 
-    const { data: investigators, error: invError } = await supabase
+    // Only approved, available investigators are eligible. The approval flag
+    // itself is admin-controlled (see 004) — it can no longer be self-set.
+    const { data: investigators, error: invError } = await admin
       .from('investigators')
-      .select('*')
-      .eq('verification_status', 'approved');
+      .select('*, profile:profiles!inner(user_id, full_name, role, kyc_status, location)')
+      .eq('verification_status', 'approved')
+      .eq('is_available', true);
 
-    if (invError || !investigators?.length) {
-      return new Response(JSON.stringify({ error: 'No verified investigators available' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (invError) {
+      return json({ error: 'Could not load investigators' }, 500, cors);
     }
 
-    const scored = investigators
-      .map((inv: Investigator) => ({
-        ...inv,
-        match_score: calculateMatchScore(inv, caseData as CaseData),
-      }))
+    const eligible = (investigators ?? []).filter((inv: Record<string, unknown>) => {
+      const profile = inv.profile as { role?: string; kyc_status?: string } | null;
+      return profile?.role === 'investigator' && profile?.kyc_status === 'approved';
+    });
+
+    if (eligible.length === 0) {
+      return json(
+        { matches: [], note: 'No verified and available investigators match this case yet.' },
+        200,
+        cors
+      );
+    }
+
+    const matches = eligible
+      .map((inv) => {
+        const { total, breakdown } = scoreInvestigator(
+          inv as unknown as Investigator,
+          caseData as CaseData
+        );
+        const profile = (inv as Record<string, unknown>).profile as
+          { full_name?: string } | null;
+        return {
+          investigator_id: (inv as Record<string, unknown>).id as string,
+          user_id: (inv as Record<string, unknown>).user_id as string,
+          full_name: profile?.full_name ?? 'Unknown',
+          specialization: (inv as Record<string, unknown>).specialization as string[],
+          service_area: (inv as Record<string, unknown>).service_area as string,
+          experience_years: (inv as Record<string, unknown>).experience_years as number,
+          rating: (inv as Record<string, unknown>).rating as number,
+          total_cases: (inv as Record<string, unknown>).total_cases as number,
+          match_score: total,
+          breakdown,
+        };
+      })
       .sort((a, b) => b.match_score - a.match_score)
       .slice(0, 5);
 
-    // Auto-assign the top match if score is above threshold
-    const topMatch = scored[0];
-    let autoAssigned = false;
-
-    if (topMatch.match_score >= 50 && caseData.status === 'submitted') {
-      const { error: assignError } = await supabase
-        .from('cases')
-        .update({
-          assigned_investigator_id: topMatch.user_id,
-          status: 'assigned',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', case_id);
-
-      if (!assignError) {
-        autoAssigned = true;
-
-        await supabase.from('notifications').insert({
-          user_id: topMatch.user_id,
-          title: 'New Case Assignment',
-          message: `You have been assigned to case: ${caseData.title}`,
-          type: 'success',
-          link: `/cases/${case_id}`,
-        });
-
-        await supabase.from('audit_logs').insert({
-          user_id: topMatch.user_id,
-          action: 'case_auto_assigned',
-          resource_type: 'case',
-          resource_id: case_id,
-          details: { match_score: topMatch.match_score },
-        });
-      }
-    }
-
-    return new Response(
-      JSON.stringify({
-        matches: scored,
-        auto_assigned: autoAssigned,
-        assigned_to: autoAssigned ? topMatch.user_id : null,
-      }),
+    // Deliberately no auto-assignment. Suggestions are returned for an admin to
+    // confirm through admin_assign_case, which re-validates the assignee.
+    return json(
       {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+        case: { id: caseData.id, title: caseData.title, status: caseData.status },
+        matches,
+        recommended: matches[0] ?? null,
+      },
+      200,
+      cors
     );
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('[match-investigator]', (err as Error).message);
+    return json({ error: 'Unexpected error' }, 500, cors);
   }
 });

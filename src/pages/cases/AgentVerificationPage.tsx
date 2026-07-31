@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, Check, ShieldCheck, AlertCircle } from 'luci
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
-import { STORAGE_BUCKETS } from '@/lib/supabase';
+import { STORAGE_BUCKETS, buildObjectPath } from '@/lib/supabase';
 import {
   Button,
   Input,
@@ -119,7 +119,8 @@ export function AgentVerificationPage() {
       ): Promise<string | null> => {
         if (files.length === 0) return null;
         const file = files[0].file;
-        const path = `${user.user_id}/${folder}/${Date.now()}-${file.name}`;
+        // The KYC policy checks the first path segment, so the user id must lead.
+        const path = buildObjectPath(user.user_id, `${folder}-${file.name}`);
         const { data, error } = await supabase.storage
           .from(STORAGE_BUCKETS.KYC_DOCUMENTS)
           .upload(path, file, { upsert: false });

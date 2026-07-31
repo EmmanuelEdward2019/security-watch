@@ -1,6 +1,40 @@
 # Supabase CLI — https://supabase.com/docs/guides/cli/config
 # Run: supabase link --project-ref <ref>
+#
+# verify_jwt defaults to true. It is only ever disabled for endpoints that
+# authenticate themselves some other way, and each of those verifies a signature
+# before doing any work.
 
 [functions.auth-send-email]
-# Called by Auth Send Email hook (signed with SEND_EMAIL_HOOK_SECRET), not end-user JWT
+# Called by the Auth "Send Email" hook, which signs with SEND_EMAIL_HOOK_SECRET
+# rather than presenting a user JWT. The Standard Webhooks signature is
+# mandatory — an unsigned request is answered 200 with nothing sent.
 verify_jwt = false
+
+[functions.payments-webhook]
+# Called by Paystack, which cannot present a Supabase JWT. Authenticated by the
+# x-paystack-signature HMAC-SHA512 over the raw body. No fallback.
+verify_jwt = false
+
+[functions.public-enquiry]
+# Anonymous public forms (Fountain Source, Contact). Rate-limited per email,
+# fixed templates, recipient is always the address just recorded.
+verify_jwt = false
+
+[functions.send-notification-email]
+# Requires a real user JWT; resolves recipients by user id and checks the caller
+# shares a case, conversation or property enquiry with them.
+verify_jwt = true
+
+[functions.payments-initialize]
+verify_jwt = true
+
+[functions.match-investigator]
+# Administrators only. Suggests; never assigns.
+verify_jwt = true
+
+[functions.generate-report]
+verify_jwt = true
+
+[functions.admin-process-deletion]
+verify_jwt = true

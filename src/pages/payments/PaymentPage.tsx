@@ -1,297 +1,392 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, CreditCard, ArrowRight } from 'lucide-react';
-import { Button, Input, Card, CardHeader, CardContent } from '@/components/ui';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { CheckCircle2, CreditCard, ArrowRight, ShieldCheck, AlertTriangle, Lock } from 'lucide-react';
+import { Button, Card, CardHeader, CardContent, Spinner, EmptyState } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
-import { usePaymentStore } from '@/stores/paymentStore';
-import { sendTemplatedEmail } from '@/lib/email';
+import {
+  startPayment,
+  fetchServicePrices,
+  awaitPaymentSettlement,
+  getPaymentByReference,
+  formatCurrency,
+} from '@/services/paymentService';
+import { PRICE_MODULE_LABELS, type ServicePrice, type PriceModule, type Payment } from '@/types';
 import { cn } from '@/utils/cn';
 import toast from 'react-hot-toast';
 
-// Paystack types (loaded via CDN script in index.html)
-declare global {
-  interface Window {
-    PaystackPop: {
-      setup: (config: {
-        key: string;
-        email: string;
-        amount: number; // kobo
-        currency?: string;
-        ref: string;
-        metadata?: Record<string, unknown>;
-        callback: (response: { reference: string; status: string }) => void;
-        onClose: () => void;
-      }) => { openIframe: () => void };
-    };
-  }
-}
-
-const CURRENCIES = [
-  { value: 'NGN', label: 'NGN — Nigerian Naira' },
-  { value: 'USD', label: 'USD — US Dollar' },
-  { value: 'GBP', label: 'GBP — British Pound' },
-];
-
+/**
+ * Checkout.
+ *
+ * The user picks a service, not an amount. The old page asked them to type
+ * whatever figure they liked into a free-text field, opened the Paystack inline
+ * popup, and then wrote `status: 'completed'` into the database from the
+ * browser — so the record was self-declared and the amount was whatever the
+ * payer chose.
+ *
+ * Now the amount comes from the server-side price catalogue, checkout happens on
+ * Paystack's hosted page, and the record is only marked complete by the webhook
+ * after the transaction is re-verified against the provider. This screen never
+ * asserts that a payment succeeded; it reads the settled status back.
+ */
 export function PaymentPage() {
   const user = useAuthStore((s) => s.user);
-  const { createPayment } = usePaymentStore();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('NGN');
-  const [description, setDescription] = useState('');
-  const [caseRef, setCaseRef] = useState('');
-  const [propertyRef, setPropertyRef] = useState('');
+  const [prices, setPrices] = useState<ServicePrice[]>([]);
+  const [loadingPrices, setLoadingPrices] = useState(true);
+  const [selectedKey, setSelectedKey] = useState('');
+  const [quantity, setQuantity] = useState(1);
   const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<'success' | null>(null);
-  const [lastReference, setLastReference] = useState('');
 
-  const amountNum = parseFloat(amount) || 0;
-  const isValid = amountNum > 0 && description.trim().length > 0 && !!user;
+  // Set when the user comes back from Paystack.
+  const [returning, setReturning] = useState(false);
+  const [settled, setSettled] = useState<Payment | null>(null);
+  const [settlementTimedOut, setSettlementTimedOut] = useState(false);
 
-  const handlePaystack = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isValid || !user) return;
+  const returnedReference = searchParams.get('reference') ?? searchParams.get('trxref');
+  const prefilledPurpose = searchParams.get('purpose');
+  const caseId = searchParams.get('caseId') ?? undefined;
+  const propertyId = searchParams.get('propertyId') ?? undefined;
 
-    if (!window.PaystackPop) {
-      toast.error('Payment SDK not loaded. Please refresh the page.');
+  const loadPrices = useCallback(async () => {
+    const { prices: list, error } = await fetchServicePrices();
+    if (error) toast.error(error);
+    setPrices(list);
+    setLoadingPrices(false);
+  }, []);
+
+  useEffect(() => {
+    void loadPrices();
+  }, [loadPrices]);
+
+  useEffect(() => {
+    if (prefilledPurpose) setSelectedKey(prefilledPurpose);
+  }, [prefilledPurpose]);
+
+  /** Wait for the webhook to settle the payment the user just completed. */
+  const confirmReturn = useCallback(async (reference: string) => {
+    setReturning(true);
+    const { payment } = await getPaymentByReference(reference);
+
+    if (!payment) {
+      setSettlementTimedOut(true);
+      setReturning(false);
       return;
     }
 
-    const ref = `tsw_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    if (payment.status !== 'pending') {
+      setSettled(payment);
+      setReturning(false);
+      return;
+    }
+
+    const { payment: final, settled: didSettle } = await awaitPaymentSettlement(payment.id);
+    setSettled(final ?? payment);
+    setSettlementTimedOut(!didSettle);
+    setReturning(false);
+  }, []);
+
+  useEffect(() => {
+    if (returnedReference) void confirmReturn(returnedReference);
+  }, [returnedReference, confirmReturn]);
+
+  const selected = useMemo(
+    () => prices.find((p) => p.key === selectedKey) ?? null,
+    [prices, selectedKey]
+  );
+
+  const total = selected ? Number(selected.amount) * quantity : 0;
+
+  const grouped = useMemo(() => {
+    const out = new Map<PriceModule, ServicePrice[]>();
+    for (const price of prices) {
+      const list = out.get(price.module) ?? [];
+      list.push(price);
+      out.set(price.module, list);
+    }
+    return out;
+  }, [prices]);
+
+  const handleCheckout = async () => {
+    if (!selected || !user) return;
     setProcessing(true);
 
-    const handler = window.PaystackPop.setup({
-      key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string,
-      email: user.email,
-      amount: Math.round(amountNum * 100), // kobo
-      currency,
-      ref,
-      metadata: {
-        custom_fields: [
-          { display_name: 'Description', variable_name: 'description', value: description },
-          { display_name: 'Case Ref', variable_name: 'case_ref', value: caseRef },
-          { display_name: 'Property Ref', variable_name: 'property_ref', value: propertyRef },
-          { display_name: 'User ID', variable_name: 'user_id', value: user.user_id },
-        ],
-      },
-
-      callback: async (response) => {
-        // Payment was authorised — save record to Supabase
-        const { error } = await createPayment({
-          payer_id: user.user_id,
-          amount: amountNum,
-          currency,
-          provider: 'paystack',
-          provider_reference: response.reference,
-          status: 'completed',
-          description,
-          case_id: caseRef || undefined,
-          property_id: propertyRef || undefined,
-        });
-
-        setProcessing(false);
-
-        if (error) {
-          toast.error('Payment recorded but failed to save details. Contact support.');
-        } else {
-          setResult('success');
-          setLastReference(response.reference);
-          toast.success('Payment successful!');
-
-          // Send confirmation email
-          try {
-            await sendTemplatedEmail(user.email, 'payment_received', {
-              recipientName: user.full_name,
-              amount: `${currency} ${amountNum.toLocaleString()}`,
-              currency,
-              reference: response.reference,
-              dashboardUrl: `${window.location.origin}/app/payments/history`,
-            });
-          } catch {
-            // Non-blocking — payment was still successful
-          }
-        }
-      },
-
-      onClose: () => {
-        setProcessing(false);
-        toast('Payment cancelled.', { icon: 'ℹ️' });
-      },
+    const { data, error } = await startPayment({
+      purpose: selected.key,
+      quantity,
+      caseId,
+      propertyId,
+      callbackPath: '/app/payments',
     });
 
-    handler.openIframe();
+    if (error || !data) {
+      toast.error(error ?? 'Could not start the payment.');
+      setProcessing(false);
+      return;
+    }
+
+    // Hosted checkout, not the inline popup: the result is confirmed by webhook
+    // rather than by a callback in this tab that we would have to trust.
+    window.location.href = data.authorizationUrl;
   };
 
-  if (result === 'success') {
+  // ── Returning from Paystack ────────────────────────────────────────────────
+  if (returning) {
+    return (
+      <div className="max-w-md mx-auto mt-20 text-center space-y-4">
+        <Spinner size="lg" />
+        <h1 className="text-lg font-semibold text-surface-900">Confirming your payment</h1>
+        <p className="text-sm text-surface-500">
+          We are waiting for the payment provider to confirm the transaction. This usually takes a
+          few seconds — please do not close this page.
+        </p>
+      </div>
+    );
+  }
+
+  if (settled) {
+    const isComplete = settled.status === 'completed';
     return (
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
+        initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
         className="max-w-md mx-auto mt-16 text-center space-y-6"
       >
         <div className="flex justify-center">
-          <CheckCircle2 size={72} className="text-brand-500" />
+          {isComplete ? (
+            <CheckCircle2 size={72} className="text-brand-500" />
+          ) : (
+            <AlertTriangle size={72} className="text-amber-500" />
+          )}
         </div>
-        <h1 className="text-2xl font-bold text-surface-900">Payment Successful!</h1>
+
+        <h1 className="text-2xl font-bold text-surface-900">
+          {isComplete ? 'Payment confirmed' : 'Payment not completed'}
+        </h1>
+
         <p className="text-surface-600">
-          Your payment of <strong>{currency} {amountNum.toLocaleString()}</strong> has been
-          processed. A confirmation has been sent to <strong>{user?.email}</strong>.
+          {isComplete ? (
+            <>
+              We received <strong>{formatCurrency(Number(settled.amount), settled.currency)}</strong>{' '}
+              for {settled.description}. A receipt is on its way to{' '}
+              <strong>{user?.email}</strong>.
+            </>
+          ) : (
+            <>
+              This transaction has not been confirmed by the provider. You have not been charged for
+              an incomplete payment — if your bank shows a debit, contact support with the reference
+              below and we will reconcile it.
+            </>
+          )}
         </p>
-        {lastReference && (
-          <p className="text-xs text-surface-400 font-mono">Ref: {lastReference}</p>
+
+        {settled.provider_reference && (
+          <p className="text-xs text-surface-400 font-mono break-all">
+            Ref: {settled.provider_reference}
+          </p>
         )}
+
         <div className="flex gap-3 justify-center">
           <Button
             variant="outline"
             onClick={() => {
-              setResult(null);
-              setAmount('');
-              setDescription('');
-              setCaseRef('');
-              setPropertyRef('');
+              setSettled(null);
+              setSettlementTimedOut(false);
+              setSelectedKey('');
+              setQuantity(1);
+              navigate('/app/payments', { replace: true });
             }}
           >
-            Make Another Payment
+            Make another payment
           </Button>
-          <Button
-            onClick={() => window.location.href = '/app/payments/history'}
-            icon={ArrowRight}
-          >
-            View History
+          <Button onClick={() => navigate('/app/payments/history')} icon={ArrowRight}>
+            View history
           </Button>
         </div>
       </motion.div>
     );
   }
 
+  if (settlementTimedOut && returnedReference) {
+    return (
+      <div className="max-w-md mx-auto mt-16">
+        <EmptyState
+          icon={AlertTriangle}
+          title="Still confirming"
+          description="The provider has not confirmed this transaction yet. It will appear in your payment history as soon as it settles — you do not need to pay again."
+          action={
+            <Button onClick={() => navigate('/app/payments/history')}>Go to payment history</Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // ── Checkout ──────────────────────────────────────────────────────────────
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="max-w-3xl mx-auto"
-    >
-      <h1 className="text-2xl font-bold text-surface-900 mb-2">Make a Payment</h1>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold text-surface-900 mb-2">Make a payment</h1>
       <p className="text-surface-500 mb-6">
-        Payments are processed securely via Paystack. Your card details are never stored on our servers.
+        Choose a service below. Prices are set by The Security Watch and shown in full before you
+        pay — there are no additional fees at checkout.
       </p>
 
-      <form onSubmit={handlePaystack} className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Payment details */}
-          <Card>
-            <CardHeader>
-              <h2 className="font-semibold text-surface-900">Payment Details</h2>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Amount"
-                  type="number"
-                  min="100"
-                  step="1"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  required
-                />
-                <div>
-                  <label className="block text-sm font-medium text-surface-700 mb-1.5">
-                    Currency
-                  </label>
-                  <select
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value)}
-                    className="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm bg-white text-surface-900"
-                  >
-                    {CURRENCIES.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <Input
-                label="Description"
-                placeholder="What is this payment for?"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                required
-              />
-              <Input
-                label="Case Reference (optional)"
-                placeholder="Case ID"
-                value={caseRef}
-                onChange={(e) => setCaseRef(e.target.value)}
-              />
-              <Input
-                label="Property Reference (optional)"
-                placeholder="Property ID"
-                value={propertyRef}
-                onChange={(e) => setPropertyRef(e.target.value)}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Security note */}
-          <div className="flex items-start gap-3 p-4 rounded-xl bg-brand-50 border border-brand-200">
-            <CreditCard size={20} className="text-brand-600 mt-0.5 shrink-0" />
-            <div className="text-sm text-brand-800">
-              <p className="font-medium mb-0.5">Secure payment via Paystack</p>
-              <p>
-                You will be redirected to a secure Paystack popup to complete your payment. We
-                do not store your card details.
-              </p>
-            </div>
-          </div>
+      {loadingPrices ? (
+        <div className="flex justify-center py-20">
+          <Spinner size="lg" />
         </div>
+      ) : prices.length === 0 ? (
+        <EmptyState
+          icon={CreditCard}
+          title="No services available"
+          description="There is nothing available to purchase right now. Please check back shortly."
+        />
+      ) : (
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            {[...grouped.entries()].map(([module, items]) => (
+              <Card key={module}>
+                <CardHeader>
+                  <h2 className="font-semibold text-surface-900">
+                    {PRICE_MODULE_LABELS[module] ?? module}
+                  </h2>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {items.map((price) => {
+                    const isSelected = selectedKey === price.key;
+                    return (
+                      <button
+                        key={price.key}
+                        type="button"
+                        onClick={() => {
+                          setSelectedKey(price.key);
+                          setQuantity(1);
+                        }}
+                        aria-pressed={isSelected}
+                        className={cn(
+                          'w-full text-left rounded-lg border p-4 transition-colors',
+                          'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
+                          isSelected
+                            ? 'border-brand-500 bg-brand-50'
+                            : 'border-surface-200 hover:border-surface-300 bg-white'
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="font-medium text-surface-900">{price.label}</p>
+                            {price.description && (
+                              <p className="text-sm text-surface-500 mt-0.5">{price.description}</p>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-semibold text-surface-900 tabular-nums">
+                              {formatCurrency(Number(price.amount), price.currency)}
+                            </p>
+                            {price.unit && (
+                              <p className="text-xs text-surface-400">{price.unit}</p>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            ))}
 
-        {/* Order summary */}
-        <div className="lg:col-span-1">
-          <Card className="sticky top-4">
-            <CardHeader>
-              <h2 className="font-semibold text-surface-900">Summary</h2>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-sm text-surface-500">Amount</p>
-                <p className="text-2xl font-bold text-surface-900">
-                  {currency}{' '}
-                  {amountNum > 0 ? amountNum.toLocaleString() : '—'}
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-brand-50 border border-brand-200">
+              <ShieldCheck size={20} className="text-brand-600 mt-0.5 shrink-0" />
+              <div className="text-sm text-brand-800">
+                <p className="font-medium mb-0.5">Verified by the payment provider</p>
+                <p>
+                  You complete payment on Paystack's secure checkout. We never see or store your
+                  card details, and a payment is only recorded once Paystack confirms it directly to
+                  our servers.
                 </p>
               </div>
+            </div>
+          </div>
 
-              {description && (
+          <div className="lg:col-span-1">
+            <Card className="lg:sticky lg:top-4">
+              <CardHeader>
+                <h2 className="font-semibold text-surface-900">Summary</h2>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {selected ? (
+                  <>
+                    <div>
+                      <p className="text-sm text-surface-500">Service</p>
+                      <p className="text-sm font-medium text-surface-800">{selected.label}</p>
+                    </div>
+
+                    {selected.unit && (
+                      <div>
+                        <label
+                          htmlFor="payment-quantity"
+                          className="block text-sm text-surface-500 mb-1.5"
+                        >
+                          Quantity ({selected.unit})
+                        </label>
+                        <input
+                          id="payment-quantity"
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={quantity}
+                          onChange={(e) =>
+                            setQuantity(Math.min(Math.max(Number(e.target.value) || 1, 1), 20))
+                          }
+                          className="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm bg-white text-surface-900 tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                        />
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-surface-200">
+                      <p className="text-sm text-surface-500">Total</p>
+                      <p className="text-2xl font-bold text-surface-900 tabular-nums">
+                        {formatCurrency(total, selected.currency)}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-surface-500">
+                    Select a service to see the total.
+                  </p>
+                )}
+
                 <div>
-                  <p className="text-sm text-surface-500">Description</p>
-                  <p className="text-sm text-surface-700 line-clamp-2">{description}</p>
+                  <p className="text-sm text-surface-500">Paying as</p>
+                  <p className="text-sm font-medium text-surface-700 truncate">{user?.email}</p>
                 </div>
-              )}
 
-              <div>
-                <p className="text-sm text-surface-500">Paying as</p>
-                <p className="text-sm font-medium text-surface-700 truncate">{user?.email}</p>
-              </div>
-
-              <AnimatePresence mode="wait">
                 <Button
-                  type="submit"
-                  disabled={!isValid || processing}
+                  onClick={handleCheckout}
+                  disabled={!selected || processing}
                   loading={processing}
-                  className={cn('w-full', !isValid && 'opacity-60 cursor-not-allowed')}
+                  className="w-full"
                   size="lg"
+                  icon={Lock}
                 >
-                  {processing ? 'Opening payment...' : `Pay ${currency} ${amountNum > 0 ? amountNum.toLocaleString() : ''}`}
+                  {processing
+                    ? 'Opening checkout…'
+                    : selected
+                      ? `Pay ${formatCurrency(total, selected.currency)}`
+                      : 'Choose a service'}
                 </Button>
-              </AnimatePresence>
 
-              <p className="text-xs text-surface-400 text-center">
-                Protected by Paystack SSL encryption
-              </p>
-            </CardContent>
-          </Card>
+                <p className="text-xs text-surface-400 text-center">
+                  You will be taken to Paystack to complete payment.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </form>
+      )}
     </motion.div>
   );
 }
+
+export default PaymentPage;

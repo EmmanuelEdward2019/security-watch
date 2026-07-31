@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A superseded run on the same branch is wasted compute.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, lint and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc -b --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        # Placeholders are enough: the client only reads these at runtime, and
+        # lib/supabase.ts throws on the literal "your-project" host, so a real
+        # project ref shape is required even for a build.
+        env:
+          VITE_SUPABASE_URL: https://ciplaceholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+          VITE_SITE_URL: https://thesecuritywatch.com
+        run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Fails the job on a high or critical advisory. Moderate findings are
+      # reported but do not block, so a transitive dev-only advisory cannot stop
+      # a security fix from shipping.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  sql-sanity:
+    name: Migration sanity
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches the two mistakes that would silently reopen the holes closed in
+      # migration 004: a new table without RLS, and a SECURITY DEFINER function
+      # without a pinned search_path.
+      - name: Every new table enables RLS
+        run: |
+          missing=0
+          for file in supabase/migrations/*.sql; do
+            while IFS= read -r table; do
+              if ! grep -q "ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY" supabase/migrations/*.sql; then
+                echo "::error file=${file}::Table public.${table} is created but never has RLS enabled"
+                missing=1
+              fi
+            done < <(grep -oE 'CREATE TABLE (IF NOT EXISTS )?public\.[a-z_]+' "$file" \
+                      | sed -E 's/.*public\.//' | sort -u)
+          done
+          exit $missing
+
+      - name: Every SECURITY DEFINER function pins search_path
+        run: |
+          bad=0
+          for file in supabase/migrations/*.sql; do
+            # Each function body is separated by a blank line before the next
+            # CREATE; check that DEFINER and SET search_path appear together.
+            definers=$(grep -c 'SECURITY DEFINER' "$file" || true)
+            paths=$(grep -c 'SET search_path' "$file" || true)
+            if [ "$definers" -gt "$paths" ]; then
+              echo "::error file=${file}::${definers} SECURITY DEFINER function(s) but only ${paths} SET search_path clause(s)"
+              bad=1
+            fi
+          done
+          exit $bad

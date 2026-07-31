@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   DataTable,
   Badge,
@@ -8,7 +8,8 @@ import {
 } from '@/components/ui';
 import type { Column } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
-import type { Investigator, VerificationStatus } from '@/types';
+import { reviewInvestigator } from '@/services/adminService';
+import type { Investigator } from '@/types';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -19,52 +20,64 @@ export function AgentVerificationTab() {
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    loadAgents();
-  }, []);
-
-  async function loadAgents() {
+  const loadAgents = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('investigators')
       .select('*, profile:profiles!user_id(full_name, avatar_url)')
       .order('created_at', { ascending: false });
+    if (error) toast.error(error.message);
     setAgents((data as typeof agents) ?? []);
     setLoading(false);
-  }
+  }, []);
 
+  useEffect(() => {
+    void loadAgents();
+  }, [loadAgents]);
+
+  /**
+   * Approving an agent both marks the record verified and grants the role they
+   * applied for, in one transaction.
+   *
+   * `investigators.verification_status` is pinned by a trigger — an investigator
+   * used to be able to approve themselves and then receive real case
+   * assignments. Direct UPDATEs are now reverted and logged, so this has to go
+   * through the RPC.
+   */
   const handleApprove = async () => {
     if (!selected) return;
     setProcessing(true);
-    const { error } = await supabase
-      .from('investigators')
-      .update({ verification_status: 'approved' as VerificationStatus, admin_notes: notes })
-      .eq('id', selected.id);
+    const { error } = await reviewInvestigator(selected.id, 'approved', notes || undefined);
     setProcessing(false);
-    if (error) toast.error(error.message);
-    else {
-      toast.success('Agent approved');
-      setSelected(null);
-      setNotes('');
-      loadAgents();
+
+    if (error) {
+      toast.error(error);
+      return;
     }
+    toast.success('Agent approved and their role granted.');
+    setSelected(null);
+    setNotes('');
+    void loadAgents();
   };
 
   const handleReject = async () => {
     if (!selected) return;
-    setProcessing(true);
-    const { error } = await supabase
-      .from('investigators')
-      .update({ verification_status: 'rejected' as VerificationStatus, admin_notes: notes })
-      .eq('id', selected.id);
-    setProcessing(false);
-    if (error) toast.error(error.message);
-    else {
-      toast.success('Agent rejected');
-      setSelected(null);
-      setNotes('');
-      loadAgents();
+    if (!notes.trim()) {
+      toast.error('Give the applicant a reason for the rejection.');
+      return;
     }
+    setProcessing(true);
+    const { error } = await reviewInvestigator(selected.id, 'rejected', notes);
+    setProcessing(false);
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success('Agent rejected and notified.');
+    setSelected(null);
+    setNotes('');
+    void loadAgents();
   };
 
   const columns: Column<Investigator & { profile?: { full_name: string } }>[] = [

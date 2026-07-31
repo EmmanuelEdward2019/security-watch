@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { Camera, ShieldCheck, MapPin, Briefcase } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { Avatar, Button, Input, TextArea, Card, CardHeader, CardContent } from '@/components/ui';
-import { uploadFile, STORAGE_BUCKETS } from '@/lib/supabase';
+import { uploadFile, buildObjectPath, STORAGE_BUCKETS } from '@/lib/supabase';
 import { format } from 'date-fns';
 import { USER_ROLE_LABELS } from '@/types';
 import toast from 'react-hot-toast';
@@ -56,7 +56,7 @@ export function ProfilePage() {
     setSaving(true);
     let avatarUrl = user?.avatar_url;
     if (avatarFile && user) {
-      const path = `${user.user_id}/avatar-${Date.now()}.${avatarFile.name.split('.').pop()}`;
+      const path = buildObjectPath(user.user_id, avatarFile.name);
       const { url, error } = await uploadFile(STORAGE_BUCKETS.AVATARS, path, avatarFile);
       if (error) {
         toast.error('Avatar upload failed');

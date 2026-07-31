@@ -1,24 +1,100 @@
+/**
+ * Compiles an institutional performance dossier.
+ *
+ * SECURITY MODEL
+ *
+ * The report is built from data that is already public — published media
+ * reports and institution scores — so any signed-in user may request one. What
+ * changed is that the caller must actually be signed in: the function holds
+ * the service-role key, and previously accepted a bare anon key (which ships in
+ * the browser bundle) as sufficient authorization.
+ *
+ * The generated HTML is also escaped now. Institution names are admin-authored
+ * but were being interpolated raw into a document we hand back for display.
+ */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? 'https://thesecuritywatch.com')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+function corsFor(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') ?? '';
+  const allowed = ALLOWED_ORIGINS.includes(origin)
+    || /^http:\/\/localhost:\d+$/.test(origin)
+    || /^http:\/\/127\.0\.0\.1:\d+$/.test(origin);
+  return {
+    'Access-Control-Allow-Origin': allowed ? origin : ALLOWED_ORIGINS[0] ?? '',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    Vary: 'Origin',
+  };
+}
+
+/** Institution text is admin-authored, but never trust it into markup. */
+function esc(value: unknown): string {
+  return String(value ?? '—')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = corsFor(req);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+  const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!SUPABASE_URL || !ANON_KEY || !SERVICE_KEY) {
+    return new Response(JSON.stringify({ error: 'Function is not configured' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'Authentication required' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+    let callerId: string | null = null;
+
+    if (token !== SERVICE_KEY) {
+      const asCaller = createClient(SUPABASE_URL, ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      const { data: userData, error: userErr } = await asCaller.auth.getUser();
+      if (userErr || !userData?.user) {
+        return new Response(JSON.stringify({ error: 'Authentication required' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      callerId = userData.user.id;
+    }
 
     const { institution_id, report_type } = await req.json();
 
-    if (!institution_id) {
+    if (!institution_id || typeof institution_id !== 'string') {
       return new Response(
         JSON.stringify({ error: 'institution_id is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -114,7 +190,7 @@ Deno.serve(async (req: Request) => {
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Institution Report - ${institution.name}</title>
+  <title>Institution Report - ${esc(institution.name)}</title>
   <style>
     body { font-family: 'Inter', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #1e293b; }
     .header { text-align: center; border-bottom: 3px solid #166534; padding-bottom: 20px; margin-bottom: 30px; }
@@ -141,10 +217,10 @@ Deno.serve(async (req: Request) => {
   </div>
   <div class="section">
     <h2>Institution Details</h2>
-    <p><strong>Name:</strong> ${institution.name}</p>
-    <p><strong>Type:</strong> ${institution.type}</p>
-    <p><strong>Location:</strong> ${institution.location}</p>
-    <p><strong>Supervising Authority:</strong> ${institution.supervising_authority}</p>
+    <p><strong>Name:</strong> ${esc(institution.name)}</p>
+    <p><strong>Type:</strong> ${esc(institution.type)}</p>
+    <p><strong>Location:</strong> ${esc(institution.location)}</p>
+    <p><strong>Supervising Authority:</strong> ${esc(institution.supervising_authority)}</p>
   </div>
   <div class="section">
     <h2>Performance Grade</h2>
@@ -174,7 +250,7 @@ Deno.serve(async (req: Request) => {
 </html>`;
 
     await supabase.from('audit_logs').insert({
-      user_id: null,
+      user_id: callerId,
       action: 'report_generated',
       resource_type: 'institution',
       resource_id: institution_id,

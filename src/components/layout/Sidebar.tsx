@@ -12,6 +12,7 @@ import {
   PlusCircle,
   ClipboardList,
   ShieldCheck,
+  ScrollText,
   Scale,
   Stethoscope,
   Home,
@@ -231,6 +232,7 @@ const roleNavSections: Record<UserRole, NavSection[]> = {
       title: 'Fountain Source',
       items: [
         { to: '/app/admin/security-requests', label: 'Service Requests', icon: ShieldCheck },
+        { to: '/app/admin/audit', label: 'Audit Trail', icon: ScrollText },
       ],
     },
   ],

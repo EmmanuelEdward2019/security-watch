@@ -18,8 +18,7 @@ import {
 } from 'lucide-react';
 import { Button, Input, TextArea } from '@/components/ui';
 import { PublicNav, PublicFooter, ScrollReveal } from '@/components/public';
-import { supabase } from '@/lib/supabase';
-import { sendTemplatedEmail } from '@/lib/email';
+import { submitPublicEnquiry } from '@/services/propertyExtrasService';
 
 const SERVICE_OPTIONS = [
   { value: 'security_guards', label: 'Security Guards' },
@@ -77,37 +76,34 @@ export default function FountainSourceRequestPage() {
     if (preselected) setValue('service_type', preselected);
   }, [preselected, setValue]);
 
+  /**
+   * Files the enquiry.
+   *
+   * The insert and the confirmation email both moved server-side. Previously an
+   * anonymous visitor called the email function directly with a recipient address
+   * of their choosing, which is what made that endpoint usable as a mail relay.
+   * The function now owns both steps, so the confirmation can only ever go to the
+   * address just recorded.
+   */
   const onSubmit = async (data: FormData) => {
     setIsSubmitting(true);
-    const { error } = await supabase
-      .from('security_service_requests')
-      .insert({
-        full_name: data.full_name,
-        email: data.email,
-        phone: data.phone,
-        company_name: data.company_name || null,
-        service_type: data.service_type,
-        location: data.location || null,
-        message: data.message,
-      });
+
+    const { error } = await submitPublicEnquiry({
+      kind: 'security_service',
+      fullName: data.full_name,
+      email: data.email,
+      phone: data.phone,
+      companyName: data.company_name || undefined,
+      serviceType: data.service_type,
+      location: data.location || undefined,
+      message: data.message,
+    });
+
     setIsSubmitting(false);
 
     if (error) {
-      toast.error('Something went wrong. Please try again or call us directly.');
+      toast.error(error);
       return;
-    }
-
-    const serviceLabel =
-      SERVICE_OPTIONS.find((o) => o.value === data.service_type)?.label ?? data.service_type;
-    try {
-      await sendTemplatedEmail(data.email, 'security_service_request_received', {
-        recipientName: data.full_name.trim().split(/\s+/)[0],
-        serviceType: serviceLabel,
-        companyName: data.company_name,
-        dashboardUrl: typeof window !== 'undefined' ? window.location.origin : undefined,
-      });
-    } catch {
-      /* non-blocking — row is saved */
     }
 
     setSubmitted(true);

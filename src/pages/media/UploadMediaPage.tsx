@@ -14,9 +14,8 @@ import {
   Card,
   CardContent,
 } from '@/components/ui';
-import { STORAGE_BUCKETS, uploadFile } from '@/lib/supabase';
+import { STORAGE_BUCKETS, uploadFile, buildObjectPath, generateFileHash } from '@/lib/supabase';
 import toast from 'react-hot-toast';
-import { v4 as uuidv4 } from 'uuid';
 
 const MEDIA_TYPE_OPTIONS = [
   { value: 'video', label: 'Video' },
@@ -88,15 +87,20 @@ export function UploadMediaPage() {
 
     setIsSubmitting(true);
 
-    const path = `${user.user_id}/${uuidv4()}-${file.file.name}`;
-    const { url, error: uploadError } = await uploadFile(
+    // Keyed by uploader: the media bucket grants the uploader, admins, and
+    // everyone once an administrator publishes the report.
+    const path = buildObjectPath(user.user_id, file.file.name);
+    // Hashed on the way in so the file can be shown to be unmodified later.
+    const hash = await generateFileHash(file.file);
+
+    const { path: storedPath, error: uploadError } = await uploadFile(
       STORAGE_BUCKETS.MEDIA_REPORTS,
       path,
       file.file
     );
 
-    if (uploadError || !url) {
-      toast.error(uploadError ?? 'Upload failed');
+    if (uploadError) {
+      toast.error(uploadError);
       setIsSubmitting(false);
       return;
     }
@@ -109,14 +113,15 @@ export function UploadMediaPage() {
       institution_id: data.institution_id,
       reporter_id: user.user_id,
       title: data.title,
-      description: data.description,
+      description: `${data.description}\n\n— SHA-256 ${hash}`,
       media_type: data.media_type,
-      file_url: url,
+      // The object path, not a URL: the bucket is private and reads are signed.
+      file_url: storedPath,
       gps_latitude: gps?.lat,
       gps_longitude: gps?.lng,
-      status: 'pending_review',
+      // status and views are set by a database trigger — a reporter cannot file
+      // something already marked published.
       tags,
-      views: 0,
     });
 
     setIsSubmitting(false);

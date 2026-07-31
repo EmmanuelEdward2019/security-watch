@@ -1,10 +1,37 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 import { Avatar, EmptyState } from '@/components/ui';
+import { STORAGE_BUCKETS, getSignedUrl } from '@/lib/supabase';
 import type { Message } from '@/types';
 import { format, isToday, isYesterday } from 'date-fns';
 import { cn } from '@/utils/cn';
+import toast from 'react-hot-toast';
+
+/**
+ * Chat attachments live in a private bucket keyed by conversation, so they need a
+ * short-lived signed URL rather than a public one. They are fetched on demand
+ * rather than eagerly, so opening a long thread does not sign every file in it.
+ */
+function useAttachment() {
+  const [pending, setPending] = useState<string | null>(null);
+
+  const open = useCallback(async (message: Message) => {
+    if (!message.file_url) return;
+    setPending(message.id);
+
+    const { url, error } = await getSignedUrl(STORAGE_BUCKETS.CHAT_FILES, message.file_url, 600);
+    setPending(null);
+
+    if (!url) {
+      toast.error(error ?? 'That attachment is no longer available to you.');
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  return { pending, open };
+}
 
 export interface ChatWindowProps {
   messages: Message[];
@@ -27,6 +54,7 @@ export function ChatWindow({
   isTyping,
 }: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { pending: pendingAttachment, open: openAttachment } = useAttachment();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,16 +80,18 @@ export function ChatWindow({
     );
   }
 
-  let lastDate: string | null = null;
-
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <AnimatePresence initial={false}>
-        {messages.map((msg) => {
+        {messages.map((msg, index) => {
           const isSelf = msg.sender_id === currentUserId;
           const msgDate = formatMessageDate(msg.created_at);
-          const showDateSeparator = msgDate !== lastDate;
-          if (showDateSeparator) lastDate = msgDate;
+          // Derived from the previous message rather than a mutable outer
+          // variable: reassigning during render is not safe under the React
+          // Compiler, and a re-render could double-insert separators.
+          const previousDate =
+            index > 0 ? formatMessageDate(messages[index - 1].created_at) : null;
+          const showDateSeparator = msgDate !== previousDate;
 
           const senderName = (msg.sender as { full_name?: string })?.full_name ?? 'Unknown';
           const senderAvatar = (msg.sender as { avatar_url?: string })?.avatar_url;
@@ -115,30 +145,25 @@ export function ChatWindow({
                     {msg.content && <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>}
                     {msg.file_url && (
                       <div className="mt-2">
-                        {isImage ? (
-                          <a
-                            href={msg.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block rounded-lg overflow-hidden max-w-[200px]"
-                          >
-                            <img
-                              src={msg.file_url}
-                              alt={msg.file_name ?? 'Attachment'}
-                              className="w-full h-auto object-cover"
-                            />
-                          </a>
-                        ) : (
-                          <a
-                            href={msg.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 text-sm hover:underline"
-                          >
+                        <button
+                          type="button"
+                          onClick={() => void openAttachment(msg)}
+                          disabled={pendingAttachment === msg.id}
+                          className={cn(
+                            'inline-flex items-center gap-2 text-sm rounded',
+                            'hover:underline disabled:opacity-70',
+                            'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
+                            isSelf ? 'focus-visible:ring-white' : 'focus-visible:ring-brand-500'
+                          )}
+                        >
+                          {pendingAttachment === msg.id ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
                             <FileText size={16} />
-                            {msg.file_name ?? 'Download file'}
-                          </a>
-                        )}
+                          )}
+                          {msg.file_name ?? 'Open attachment'}
+                          {isImage ? ' (image)' : ''}
+                        </button>
                       </div>
                     )}
                   </div>

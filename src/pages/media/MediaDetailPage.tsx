@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, MapPin, Eye, Video, Image, Mic, FileText } from 'lucide-react';
@@ -22,13 +22,52 @@ const MEDIA_TYPE_ICONS: Record<string, typeof Video> = {
 
 export function MediaDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { currentReport, mediaReports, isLoading, fetchMediaReport, fetchMediaReports } =
-    useMediaStore();
+  const {
+    currentReport,
+    mediaReports,
+    isLoading,
+    fetchMediaReport,
+    fetchMediaReports,
+    getMediaUrl,
+    recordView,
+  } = useMediaStore();
+
+  // The bucket is private and the row stores an object path, so playback needs a
+  // short-lived signed URL. Previously a public URL was stored for a private
+  // bucket, which never resolved — media simply did not play.
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState(false);
 
   useEffect(() => {
-    if (id) fetchMediaReport(id);
-    fetchMediaReports({ status: 'published' });
+    if (id) void fetchMediaReport(id);
+    void fetchMediaReports({ status: 'published' });
   }, [id, fetchMediaReport, fetchMediaReports]);
+
+  useEffect(() => {
+    if (!currentReport) return;
+
+    let cancelled = false;
+    setMediaUrl(null);
+    setUrlError(false);
+
+    void (async () => {
+      const url = await getMediaUrl(currentReport);
+      if (cancelled) return;
+      if (url) setMediaUrl(url);
+      else setUrlError(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentReport, getMediaUrl]);
+
+  // Counted once per mount, through an RPC — `views` is not a writable column.
+  useEffect(() => {
+    if (currentReport?.status === 'published' && currentReport.id) {
+      void recordView(currentReport.id);
+    }
+  }, [currentReport?.id, currentReport?.status, recordView]);
 
   const relatedReports = mediaReports
     .filter((r) => r.id !== id && r.institution_id === currentReport?.institution_id)
@@ -83,40 +122,56 @@ export function MediaDetailPage() {
           {/* Media player */}
           <div className="lg:col-span-2">
             <div className="rounded-xl overflow-hidden bg-black aspect-video">
-              {isVideo && (
-                <video
-                  src={currentReport.file_url}
-                  controls
-                  className="w-full h-full"
-                  poster={currentReport.thumbnail_url}
-                >
-                  Your browser does not support the video tag.
-                </video>
-              )}
-              {isAudio && (
-                <div className="w-full h-full flex items-center justify-center bg-surface-900">
-                  <audio src={currentReport.file_url} controls className="w-full max-w-md" />
+              {urlError ? (
+                <div className="w-full h-full flex flex-col items-center justify-center text-white p-8 text-center">
+                  <FileText size={48} className="mb-3 opacity-50" />
+                  <p className="text-sm text-surface-300">
+                    This recording is not available to you. Reports are visible to the agent who
+                    filed them, to administrators, and to everyone once published.
+                  </p>
                 </div>
-              )}
-              {isImage && (
-                <img
-                  src={currentReport.file_url}
-                  alt={currentReport.title}
-                  className="w-full h-full object-contain"
-                />
-              )}
-              {!isVideo && !isAudio && !isImage && (
-                <div className="w-full h-full flex flex-col items-center justify-center text-white p-8">
-                  <FileText size={64} className="mb-4 opacity-50" />
-                  <a
-                    href={currentReport.file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-brand-400 hover:underline"
-                  >
-                    Open document
-                  </a>
+              ) : !mediaUrl ? (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Spinner size="lg" />
                 </div>
+              ) : (
+                <>
+                  {isVideo && (
+                    <video
+                      src={mediaUrl}
+                      controls
+                      className="w-full h-full"
+                      poster={currentReport.thumbnail_url}
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                  )}
+                  {isAudio && (
+                    <div className="w-full h-full flex items-center justify-center bg-surface-900">
+                      <audio src={mediaUrl} controls className="w-full max-w-md" />
+                    </div>
+                  )}
+                  {isImage && (
+                    <img
+                      src={mediaUrl}
+                      alt={currentReport.title}
+                      className="w-full h-full object-contain"
+                    />
+                  )}
+                  {!isVideo && !isAudio && !isImage && (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-white p-8">
+                      <FileText size={64} className="mb-4 opacity-50" />
+                      <a
+                        href={mediaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-brand-400 hover:underline"
+                      >
+                        Open document
+                      </a>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

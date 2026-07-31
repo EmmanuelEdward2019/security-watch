@@ -32,7 +32,7 @@ import {
 } from '@/components/ui';
 import { CaseStatusTracker } from '@/components/cases/CaseStatusTracker';
 import { EvidenceTimeline } from '@/components/cases/EvidenceTimeline';
-import { uploadFile, generateFileHash, STORAGE_BUCKETS } from '@/lib/supabase';
+import { uploadFile, generateFileHash, buildObjectPath, STORAGE_BUCKETS } from '@/lib/supabase';
 import type { UploadedFile } from '@/components/ui/FileUpload';
 import {
   CASE_CATEGORY_LABELS,
@@ -98,27 +98,38 @@ export function CaseDetailPage() {
     setIsUploading(true);
     try {
       for (const uf of uploadedFiles) {
-        const path = `${id}/${Date.now()}-${uf.file.name}`;
-        const { url, error: uploadError } = await uploadFile(
+        // The first path segment is the case id: the evidence storage policy
+        // grants read and write to that case's participants, which is what makes
+        // filed evidence readable by the investigator and admin who need it.
+        // upsert is off, so a colliding path fails rather than silently
+        // replacing bytes that a recorded hash still claims to describe.
+        const path = buildObjectPath(id, uf.file.name);
+        const hash = await generateFileHash(uf.file);
+
+        const { path: storedPath, error: uploadError } = await uploadFile(
           STORAGE_BUCKETS.EVIDENCE,
           path,
           uf.file
         );
         if (uploadError) {
-          toast.error(`Failed to upload ${uf.file.name}`);
+          toast.error(`Could not upload ${uf.file.name}: ${uploadError}`);
           continue;
         }
-        const hash = await generateFileHash(uf.file);
-        await addEvidence({
+
+        // chain_of_custody is written by a database trigger from the
+        // authenticated identity — the client no longer authors provenance.
+        const { error: recordError } = await addEvidence({
           case_id: id,
           uploaded_by: user.user_id,
-          file_url: url,
+          file_url: storedPath,
           file_name: uf.file.name,
           file_type: uf.file.type,
           file_size: uf.file.size,
           file_hash: hash,
-          chain_of_custody: [],
         });
+        if (recordError) {
+          toast.error(`Uploaded ${uf.file.name} but could not record it: ${recordError}`);
+        }
       }
       setUploadedFiles([]);
       setShowEvidenceUpload(false);

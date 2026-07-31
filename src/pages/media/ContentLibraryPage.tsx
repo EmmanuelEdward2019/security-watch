@@ -1,139 +1,221 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Library, Film, Calendar } from 'lucide-react';
-import { Card, CardContent, Button, StatusBadge } from '@/components/ui';
+import { useNavigate } from 'react-router-dom';
+import { Search, Library, Film, Music, Image as ImageIcon, FileText, Eye, Building2 } from 'lucide-react';
+import {
+  Card,
+  CardHeader,
+  CardContent,
+  Button,
+  Input,
+  Select,
+  StatusBadge,
+  EmptyState,
+  Spinner,
+  StatsCard,
+} from '@/components/ui';
+import { useMediaStore } from '@/stores/mediaStore';
+import type { MediaReport, MediaStatus } from '@/types';
+import { format } from 'date-fns';
+import toast from 'react-hot-toast';
 
-interface MediaItem {
-  id: string;
-  title: string;
-  category: string;
-  date: string;
-  status: string;
-}
+const MEDIA_ICONS = {
+  video: Film,
+  audio: Music,
+  photo: ImageIcon,
+  document: FileText,
+} as const;
 
-const mockMedia: MediaItem[] = [
-  { id: '1', title: 'Central Station Monthly Report', category: 'Police', date: '2026-03-18', status: 'verified' },
-  { id: '2', title: 'School Infrastructure Audit', category: 'Schools', date: '2026-03-16', status: 'verified' },
-  { id: '3', title: 'City Hospital Staff Review', category: 'Hospitals', date: '2026-03-14', status: 'pending' },
-  { id: '4', title: 'Market Safety Inspection', category: 'Markets', date: '2026-03-12', status: 'verified' },
-  { id: '5', title: 'East Police Post Update', category: 'Police', date: '2026-03-10', status: 'active' },
-  { id: '6', title: 'Regional Hospital Conditions', category: 'Hospitals', date: '2026-03-08', status: 'verified' },
-  { id: '7', title: 'Hilltop School Water Access', category: 'Schools', date: '2026-03-06', status: 'pending' },
-  { id: '8', title: 'Central Market Vendor Survey', category: 'Markets', date: '2026-03-04', status: 'verified' },
-  { id: '9', title: 'Highway Patrol Office Footage', category: 'Police', date: '2026-03-02', status: 'active' },
-];
-
-const categories = ['All', 'Police', 'Schools', 'Hospitals', 'Markets'];
-
+/**
+ * Full media archive for administrators.
+ *
+ * Was a hardcoded `mockMedia` array. Reads every report now, at any status, with
+ * search and filtering — the counterpart to the publish queue, which only shows
+ * what is waiting for a decision.
+ */
 export default function ContentLibraryPage() {
-  const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
+  const navigate = useNavigate();
+  const { mediaReports, fetchMediaReports, isLoading, error } = useMediaStore();
 
-  const filtered = mockMedia.filter((item) => {
-    const matchesSearch = item.title.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = activeCategory === 'All' || item.category === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<MediaStatus | ''>('');
+  const [typeFilter, setTypeFilter] = useState('');
+
+  const load = useCallback(async () => {
+    await fetchMediaReports();
+  }, [fetchMediaReports]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (error) toast.error(error);
+  }, [error]);
+
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return mediaReports.filter((report) => {
+      if (statusFilter && report.status !== statusFilter) return false;
+      if (typeFilter && report.media_type !== typeFilter) return false;
+      if (!term) return true;
+      return (
+        report.title.toLowerCase().includes(term) ||
+        report.description?.toLowerCase().includes(term) ||
+        report.institution?.name?.toLowerCase().includes(term) ||
+        report.tags?.some((t) => t.toLowerCase().includes(term))
+      );
+    });
+  }, [mediaReports, search, statusFilter, typeFilter]);
+
+  const stats = useMemo(
+    () => ({
+      total: mediaReports.length,
+      published: mediaReports.filter((r) => r.status === 'published').length,
+      pending: mediaReports.filter((r) => r.status === 'pending_review').length,
+      views: mediaReports.reduce((sum, r) => sum + (r.views ?? 0), 0),
+    }),
+    [mediaReports]
+  );
+
+  const statusOf = (status: MediaStatus) =>
+    status === 'published'
+      ? 'completed'
+      : status === 'approved'
+        ? 'active'
+        : status === 'rejected'
+          ? 'rejected'
+          : 'pending';
 
   return (
-    <div className="min-h-screen bg-surface-50">
-      <div className="container mx-auto px-4 py-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
-        >
-          <h1 className="text-2xl font-bold text-surface-900 flex items-center gap-2">
-            <Library size={24} className="text-forest-600" />
-            Content Library
-          </h1>
-          <p className="text-surface-600 mt-1">
-            Browse and manage approved media content
-          </p>
-        </motion.div>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="space-y-6"
+    >
+      <div>
+        <h1 className="text-2xl font-bold text-surface-900">Content library</h1>
+        <p className="text-surface-500 mt-1">
+          Every field report filed against an institution, at any stage of review.
+        </p>
+      </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-6 space-y-4"
-        >
-          <div className="relative">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
-            <input
-              type="text"
-              placeholder="Search content..."
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard label="Total reports" value={stats.total} icon={Library} />
+        <StatsCard label="Published" value={stats.published} icon={Eye} variant="success" />
+        <StatsCard label="Awaiting review" value={stats.pending} icon={FileText} variant="warning" />
+        <StatsCard label="Total views" value={stats.views} icon={Eye} variant="brand" />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Input
+              icon={Search}
+              placeholder="Search title, institution or tag"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg border border-surface-300 bg-white pl-10 pr-4 py-2.5 text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-forest-600/50 focus:border-forest-600 transition-colors"
+              aria-label="Search the library"
+            />
+            <Select
+              options={[
+                { value: '', label: 'All statuses' },
+                { value: 'pending_review', label: 'Awaiting review' },
+                { value: 'approved', label: 'Approved' },
+                { value: 'published', label: 'Published' },
+                { value: 'rejected', label: 'Rejected' },
+              ]}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as MediaStatus | '')}
+              aria-label="Filter by status"
+            />
+            <Select
+              options={[
+                { value: '', label: 'All media types' },
+                { value: 'video', label: 'Video' },
+                { value: 'audio', label: 'Audio' },
+                { value: 'photo', label: 'Photo' },
+                { value: 'document', label: 'Document' },
+              ]}
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              aria-label="Filter by media type"
             />
           </div>
+        </CardHeader>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  activeCategory === cat
-                    ? 'bg-forest-600 text-white'
-                    : 'text-surface-600 hover:bg-surface-100 border border-surface-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        </motion.div>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex justify-center py-16">
+              <Spinner size="lg" />
+            </div>
+          ) : visible.length === 0 ? (
+            <EmptyState
+              icon={Library}
+              title={mediaReports.length === 0 ? 'The library is empty' : 'Nothing matches'}
+              description={
+                mediaReports.length === 0
+                  ? 'Reports filed by media agents will be collected here.'
+                  : 'Try a different search or clear the filters.'
+              }
+            />
+          ) : (
+            <ul className="divide-y divide-surface-100">
+              {visible.map((report: MediaReport) => {
+                const Icon = MEDIA_ICONS[report.media_type] ?? FileText;
+                return (
+                  <li key={report.id} className="flex flex-wrap gap-4 py-4 first:pt-0 last:pb-0">
+                    <div className="mt-0.5 shrink-0 rounded-lg bg-surface-100 p-2.5">
+                      <Icon size={18} className="text-surface-500" />
+                    </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"
-        >
-          {filtered.map((item, i) => (
-            <motion.div
-              key={item.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 * i }}
-            >
-              <Card hover>
-                <div className="h-40 bg-surface-100 flex items-center justify-center">
-                  <Film size={40} className="text-surface-300" strokeWidth={1.5} />
-                </div>
-                <CardContent>
-                  <h3 className="font-semibold text-surface-900 line-clamp-1">{item.title}</h3>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="px-2 py-0.5 text-xs font-medium rounded bg-forest-50 text-forest-600">
-                      {item.category}
-                    </span>
-                    <StatusBadge status={item.status} />
-                  </div>
-                  <p className="text-sm text-surface-500 flex items-center gap-1 mt-2">
-                    <Calendar size={12} />
-                    {item.date}
-                  </p>
-                  <div className="mt-3">
-                    <Button variant="outline" size="sm" className="w-full">
-                      View Details
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <h2 className="font-medium text-surface-900 line-clamp-1">{report.title}</h2>
+                        <StatusBadge status={statusOf(report.status)} />
+                      </div>
 
-        {filtered.length === 0 && (
-          <div className="text-center py-16">
-            <Library size={48} className="mx-auto text-surface-300 mb-4" strokeWidth={1.5} />
-            <p className="text-surface-600 font-medium">No content found</p>
-            <p className="text-surface-500 text-sm mt-1">Try adjusting your search or filters</p>
-          </div>
-        )}
-      </div>
-    </div>
+                      <p className="text-sm text-surface-500 flex items-center gap-1.5 mt-0.5">
+                        <Building2 size={12} className="shrink-0" />
+                        <span className="truncate">
+                          {report.institution?.name ?? 'Unknown institution'}
+                        </span>
+                      </p>
+
+                      <p className="text-sm text-surface-600 line-clamp-2 mt-1">
+                        {report.description}
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-surface-400">
+                        <span>{format(new Date(report.created_at), 'd MMM yyyy')}</span>
+                        <span className="capitalize">{report.media_type}</span>
+                        <span className="tabular-nums">{report.views ?? 0} views</span>
+                        {report.gps_latitude != null && report.gps_longitude != null && (
+                          <span className="tabular-nums">
+                            {report.gps_latitude.toFixed(4)}, {report.gps_longitude.toFixed(4)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-start">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={Eye}
+                        onClick={() => navigate(`/app/media/${report.id}`)}
+                      >
+                        Open
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }

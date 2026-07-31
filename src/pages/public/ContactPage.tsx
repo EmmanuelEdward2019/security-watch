@@ -6,12 +6,14 @@ import toast from 'react-hot-toast';
 import { Mail, Phone, MapPin, Send } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { PublicNav, PublicFooter, ScrollReveal } from '@/components/public';
+import { submitPublicEnquiry } from '@/services/propertyExtrasService';
 
 const schema = z.object({
-  name: z.string().min(2, 'Name is required'),
-  email: z.string().email('Valid email required'),
-  subject: z.string().min(2, 'Subject is required'),
-  message: z.string().min(10, 'Message must be at least 10 characters'),
+  name: z.string().min(2, 'Please give us your name'),
+  email: z.string().email('That email address does not look right'),
+  phone: z.string().optional(),
+  subject: z.string().min(2, 'What is your message about?'),
+  message: z.string().min(10, 'Please tell us a little more — at least 10 characters'),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -22,13 +24,37 @@ export default function ContactPage() {
     resolver: zodResolver(schema),
   });
 
-  const onSubmit = async (_data: FormData) => {
+  /**
+   * Sends the enquiry.
+   *
+   * This used to wait one second and claim success without sending anything —
+   * messages from the public contact form reached nobody. It now goes through the
+   * public-enquiry function, which records it, emails a confirmation to the
+   * address given, and notifies every administrator.
+   */
+  const onSubmit = async (data: FormData) => {
     setIsSubmitting(true);
-    // Simulate submit - replace with actual API call
-    await new Promise((r) => setTimeout(r, 1000));
-    toast.success('Your message has been submitted. Our team will respond within 24 hours.');
-    reset();
+
+    const { error } = await submitPublicEnquiry({
+      kind: 'contact',
+      fullName: data.name,
+      email: data.email,
+      phone: data.phone,
+      subject: data.subject,
+      message: data.message,
+    });
+
     setIsSubmitting(false);
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    toast.success(
+      'Message received. We have emailed you a confirmation and our team will respond within 24 hours.'
+    );
+    reset();
   };
 
   return (
@@ -120,6 +146,18 @@ export default function ContactPage() {
                       placeholder="you@example.com"
                     />
                     {errors.email && <p className="mt-1 text-sm text-accent-600">{errors.email.message}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-surface-700 mb-1">
+                      Phone <span className="text-surface-400">(optional)</span>
+                    </label>
+                    <input
+                      {...register('phone')}
+                      type="tel"
+                      autoComplete="tel"
+                      className="w-full px-4 py-3 rounded-lg border border-surface-300 focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none"
+                      placeholder="+234 800 000 0000"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-surface-700 mb-1">Subject</label>

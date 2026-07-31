@@ -8,6 +8,7 @@ interface PropertyState {
   documents: PropertyDocument[];
   requests: PropertyRequest[];
   isLoading: boolean;
+  error: string | null;
   filters: {
     location?: string;
     minPrice?: number;
@@ -22,6 +23,7 @@ interface PropertyState {
   fetchProperty: (id: string) => Promise<void>;
   createProperty: (property: Partial<Property>) => Promise<{ id: string | null; error: string | null }>;
   updateProperty: (id: string, updates: Partial<Property>) => Promise<{ error: string | null }>;
+  submitForReview: (id: string) => Promise<{ error: string | null }>;
   deleteProperty: (id: string) => Promise<{ error: string | null }>;
   fetchDocuments: (propertyId: string) => Promise<void>;
   addDocument: (doc: Partial<PropertyDocument>) => Promise<{ error: string | null }>;
@@ -37,13 +39,14 @@ export const usePropertyStore = create<PropertyState>((set, get) => ({
   documents: [],
   requests: [],
   isLoading: false,
+  error: null,
   filters: {},
 
   fetchProperties: async (ownerId) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     let query = supabase
       .from('properties')
-      .select('*, owner:profiles!owner_id(*)')
+      .select('*, owner:profiles!owner_id(user_id, full_name, avatar_url, phone, email)')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
@@ -58,25 +61,50 @@ export const usePropertyStore = create<PropertyState>((set, get) => ({
     if (search) query = query.ilike('title', `%${search}%`);
 
     const { data, error } = await query;
-    if (!error && data) set({ properties: data as Property[] });
-    set({ isLoading: false });
+    if (error) {
+      set({ error: error.message, isLoading: false });
+      return;
+    }
+    set({ properties: (data ?? []) as Property[], isLoading: false });
   },
 
   fetchProperty: async (id) => {
+    set({ error: null });
     const { data, error } = await supabase
       .from('properties')
-      .select('*, owner:profiles!owner_id(*)')
+      .select('*, owner:profiles!owner_id(user_id, full_name, avatar_url, phone, email)')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (!error && data) set({ currentProperty: data as Property });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ currentProperty: (data as Property) ?? null });
   },
 
   createProperty: async (property) => {
+    // `status` is forced to 'unverified' on insert by a trigger — the verified
+    // badge is granted by an admin, never claimed by the owner.
     const { data, error } = await supabase
       .from('properties')
-      .insert(property)
-      .select()
+      .insert({
+        owner_id: property.owner_id,
+        title: property.title,
+        description: property.description,
+        property_type: property.property_type,
+        price: property.price,
+        currency: property.currency ?? 'NGN',
+        location: property.location,
+        address: property.address,
+        bedrooms: property.bedrooms ?? null,
+        bathrooms: property.bathrooms ?? null,
+        area_sqm: property.area_sqm ?? null,
+        listing_type: property.listing_type,
+        images: property.images ?? [],
+        features: property.features ?? [],
+      })
+      .select('id')
       .single();
 
     if (error) return { id: null, error: error.message };
@@ -84,12 +112,24 @@ export const usePropertyStore = create<PropertyState>((set, get) => ({
   },
 
   updateProperty: async (id, updates) => {
+    // An owner may not set `status`. The one legal self-service transition is
+    // submitting an unverified listing for review, which submitForReview() does.
+    const { status: _ignoredStatus, owner_id: _ignoredOwner, ...safe } = updates;
+    const { error } = await supabase.from('properties').update(safe).eq('id', id);
+
+    if (error) return { error: error.message };
+    return { error: null };
+  },
+
+  /** Moves an owner's listing into the admin verification queue. */
+  submitForReview: async (id) => {
     const { error } = await supabase
       .from('properties')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update({ status: 'pending' })
       .eq('id', id);
 
     if (error) return { error: error.message };
+    await get().fetchProperty(id);
     return { error: null };
   },
 
@@ -110,7 +150,11 @@ export const usePropertyStore = create<PropertyState>((set, get) => ({
       .eq('property_id', propertyId)
       .order('created_at', { ascending: false });
 
-    if (!error && data) set({ documents: data as PropertyDocument[] });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ documents: (data ?? []) as PropertyDocument[] });
   },
 
   addDocument: async (doc) => {
@@ -120,23 +164,46 @@ export const usePropertyStore = create<PropertyState>((set, get) => ({
   },
 
   fetchRequests: async (userId, asOwner = false) => {
+    set({ error: null });
+
+    // `property:properties.owner_id` was not a valid PostgREST filter, so the
+    // landlord view silently returned nothing. Filtering an embedded resource
+    // needs the relation name and an inner join.
     let query = supabase
       .from('property_requests')
-      .select('*, requester:profiles!requester_id(*), property:properties!property_id(*)')
+      .select(
+        asOwner
+          ? '*, requester:profiles!requester_id(user_id, full_name, email, phone, avatar_url), properties!inner(*)'
+          : '*, requester:profiles!requester_id(user_id, full_name, email, phone, avatar_url), properties(*)'
+      )
       .order('created_at', { ascending: false });
 
     if (asOwner) {
-      query = query.eq('property:properties.owner_id', userId);
+      query = query.eq('properties.owner_id', userId);
     } else {
       query = query.eq('requester_id', userId);
     }
 
     const { data, error } = await query;
-    if (!error && data) set({ requests: data as PropertyRequest[] });
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+
+    const requests = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      ...row,
+      property: row.properties ?? row.property,
+    })) as PropertyRequest[];
+
+    set({ requests });
   },
 
   createRequest: async (request) => {
-    const { error } = await supabase.from('property_requests').insert(request);
+    const { error } = await supabase.from('property_requests').insert({
+      property_id: request.property_id,
+      requester_id: request.requester_id,
+      message: request.message,
+    });
     if (error) return { error: error.message };
     return { error: null };
   },

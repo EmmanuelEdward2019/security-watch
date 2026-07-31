@@ -73,9 +73,28 @@ export interface Profile {
   kyc_status: KycStatus;
   bio?: string;
   location?: string;
+  /**
+   * The role picked at registration. Roles that grant sight of other people's
+   * case files are not self-service, so this holds the request until an admin
+   * confirms it — see migration 004.
+   */
+  requested_role?: UserRole | null;
+  role_confirmed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
+
+/** Roles a user receives immediately on signup, without admin review. */
+export const SELF_SERVICE_ROLES: UserRole[] = [
+  'complainant',
+  'witness',
+  'landlord',
+  'tenant',
+  'media_agent',
+];
+
+/** Roles that must be granted by an admin after verification. */
+export const VERIFIED_ROLES: UserRole[] = ['investigator', 'lawyer', 'medical_expert'];
 
 export interface Case {
   id: string;
@@ -129,11 +148,34 @@ export interface Investigator {
   rating: number;
   total_cases: number;
   verification_status: VerificationStatus;
+  is_available: boolean;
   id_document_url?: string;
   service_records_url?: string;
   admin_notes?: string;
   created_at: string;
+  updated_at?: string;
   profile?: Profile;
+}
+
+/** One suggestion from the match-investigator function. */
+export interface InvestigatorMatch {
+  investigator_id: string;
+  user_id: string;
+  full_name: string;
+  specialization: string[];
+  service_area: string;
+  experience_years: number;
+  rating: number;
+  total_cases: number;
+  match_score: number;
+  breakdown: {
+    specialization: number;
+    location: number;
+    experience: number;
+    rating: number;
+    availability: number;
+    urgency: number;
+  };
 }
 
 export interface Guarantor {
@@ -311,7 +353,366 @@ export interface DashboardStats {
   totalProperties: number;
   verifiedProperties: number;
   totalMediaReports: number;
+  publishedMedia: number;
   totalPayments: number;
+  paymentCount: number;
   totalUsers: number;
   pendingVerifications: number;
+  pendingMedia: number;
+  usersByRole: Record<string, number>;
+  casesByStatus: Record<string, number>;
+  casesByCategory: Record<string, number>;
+  casesByUrgency: Record<string, number>;
+}
+
+export interface MonthlyTrend {
+  month: string;
+  cases: number;
+  users: number;
+  properties: number;
+  media: number;
+  revenue: number;
+}
+
+export interface SecuritySummary {
+  guardViolations24h: number;
+  guardViolationsTotal: number;
+  criticalEvents7d: number;
+  roleChanges7d: number;
+  unconfirmedPrivilegedRoles: number;
+  openDeletionRequests: number;
+}
+
+// =============================================================================
+// Attachments — stored as an object path plus verification metadata, never a
+// bare URL. Private buckets are read through short-lived signed URLs.
+// =============================================================================
+
+export interface StoredAttachment {
+  path: string;
+  name: string;
+  size: number;
+  type: string;
+  hash?: string;
+}
+
+// =============================================================================
+// Pricing
+// =============================================================================
+
+export type PriceModule = 'investigation' | 'property' | 'media' | 'security';
+
+export interface ServicePrice {
+  id: string;
+  key: string;
+  module: PriceModule;
+  label: string;
+  description?: string;
+  amount: number;
+  currency: string;
+  unit?: string;
+  is_active: boolean;
+  sort_order: number;
+  updated_at: string;
+}
+
+export const PRICE_MODULE_LABELS: Record<PriceModule, string> = {
+  investigation: 'Investigative Services',
+  property: 'Property & Real Estate',
+  media: 'Transparency & Media',
+  security: 'Fountain Source Security',
+};
+
+// =============================================================================
+// Investigation reports
+// =============================================================================
+
+export type InvestigationReportStatus = 'draft' | 'submitted' | 'accepted' | 'revision_requested';
+
+export interface InvestigationReport {
+  id: string;
+  case_id: string;
+  author_id: string;
+  title: string;
+  findings: string;
+  recommendations?: string;
+  attachments: StoredAttachment[];
+  status: InvestigationReportStatus;
+  reviewer_notes?: string;
+  reviewed_at?: string;
+  created_at: string;
+  updated_at: string;
+  case?: Pick<Case, 'id' | 'title' | 'status' | 'category'>;
+  author?: Profile;
+}
+
+export const INVESTIGATION_REPORT_STATUS_LABELS: Record<InvestigationReportStatus, string> = {
+  draft: 'Draft',
+  submitted: 'Submitted',
+  accepted: 'Accepted',
+  revision_requested: 'Revision requested',
+};
+
+// =============================================================================
+// Legal documents
+// =============================================================================
+
+export type LegalDocumentType =
+  | 'affidavit' | 'petition' | 'court_filing' | 'legal_opinion' | 'witness_statement'
+  | 'subpoena' | 'settlement' | 'correspondence' | 'other';
+
+export type LegalDocumentStatus = 'draft' | 'filed' | 'served' | 'archived';
+
+export interface LegalDocument {
+  id: string;
+  case_id?: string | null;
+  author_id: string;
+  document_type: LegalDocumentType;
+  title: string;
+  description?: string;
+  file_path: string;
+  file_name: string;
+  file_size?: number;
+  file_hash?: string;
+  status: LegalDocumentStatus;
+  filed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  case?: Pick<Case, 'id' | 'title'>;
+}
+
+export const LEGAL_DOCUMENT_TYPE_LABELS: Record<LegalDocumentType, string> = {
+  affidavit: 'Affidavit',
+  petition: 'Petition',
+  court_filing: 'Court filing',
+  legal_opinion: 'Legal opinion',
+  witness_statement: 'Witness statement',
+  subpoena: 'Subpoena',
+  settlement: 'Settlement agreement',
+  correspondence: 'Correspondence',
+  other: 'Other',
+};
+
+export const LEGAL_DOCUMENT_STATUS_LABELS: Record<LegalDocumentStatus, string> = {
+  draft: 'Draft',
+  filed: 'Filed',
+  served: 'Served',
+  archived: 'Archived',
+};
+
+// =============================================================================
+// Forensic analyses
+// =============================================================================
+
+export type ForensicAnalysisType =
+  | 'medical_examination' | 'toxicology' | 'dna' | 'ballistics' | 'digital_forensics'
+  | 'document_examination' | 'pathology' | 'psychological' | 'other';
+
+export type ForensicConfidence = 'low' | 'moderate' | 'high' | 'conclusive';
+export type ForensicAnalysisStatus = 'in_progress' | 'completed' | 'peer_review' | 'finalised';
+
+export interface ForensicAnalysis {
+  id: string;
+  case_id: string;
+  evidence_id?: string | null;
+  expert_id: string;
+  analysis_type: ForensicAnalysisType;
+  methodology?: string;
+  findings: string;
+  conclusion: string;
+  confidence: ForensicConfidence;
+  attachments: StoredAttachment[];
+  status: ForensicAnalysisStatus;
+  created_at: string;
+  updated_at: string;
+  case?: Pick<Case, 'id' | 'title' | 'category' | 'urgency'>;
+  evidence?: Pick<Evidence, 'id' | 'file_name' | 'file_hash'>;
+}
+
+export const FORENSIC_ANALYSIS_TYPE_LABELS: Record<ForensicAnalysisType, string> = {
+  medical_examination: 'Medical examination',
+  toxicology: 'Toxicology',
+  dna: 'DNA analysis',
+  ballistics: 'Ballistics',
+  digital_forensics: 'Digital forensics',
+  document_examination: 'Document examination',
+  pathology: 'Pathology',
+  psychological: 'Psychological assessment',
+  other: 'Other',
+};
+
+export const FORENSIC_CONFIDENCE_LABELS: Record<ForensicConfidence, string> = {
+  low: 'Low confidence',
+  moderate: 'Moderate confidence',
+  high: 'High confidence',
+  conclusive: 'Conclusive',
+};
+
+export const FORENSIC_STATUS_LABELS: Record<ForensicAnalysisStatus, string> = {
+  in_progress: 'In progress',
+  completed: 'Completed',
+  peer_review: 'Peer review',
+  finalised: 'Finalised',
+};
+
+// =============================================================================
+// Property extras
+// =============================================================================
+
+export interface SavedProperty {
+  id: string;
+  user_id: string;
+  property_id: string;
+  notes?: string;
+  created_at: string;
+  property?: Property;
+}
+
+export type PropertyVerificationStatus =
+  | 'pending' | 'in_review' | 'verified' | 'failed' | 'cancelled';
+
+export interface PropertyVerificationRequest {
+  id: string;
+  property_id: string;
+  requester_id: string;
+  reason?: string;
+  status: PropertyVerificationStatus;
+  payment_id?: string | null;
+  admin_notes?: string;
+  reviewed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  property?: Property;
+  requester?: Profile;
+}
+
+export const PROPERTY_VERIFICATION_STATUS_LABELS: Record<PropertyVerificationStatus, string> = {
+  pending: 'Awaiting payment',
+  in_review: 'Under review',
+  verified: 'Verified',
+  failed: 'Verification failed',
+  cancelled: 'Cancelled',
+};
+
+export interface LandlordTransaction {
+  payment_id: string;
+  property_id: string;
+  property_title: string;
+  counterparty_name: string | null;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  purpose: string | null;
+  reference: string | null;
+  created_at: string;
+}
+
+export interface EarningRecord {
+  payment_id: string;
+  case_id: string;
+  case_title: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  purpose: string | null;
+  created_at: string;
+}
+
+// =============================================================================
+// Institutions, activity, admin
+// =============================================================================
+
+export interface InstitutionRanking {
+  institution_id: string;
+  name: string;
+  type: Institution['type'];
+  location: string;
+  avg_score: number;
+  evaluations: number;
+  published_reports: number;
+}
+
+export interface ActivityEntry {
+  id: string;
+  kind: 'media_report' | 'institution_score' | 'audit';
+  title: string;
+  detail: string | null;
+  status: string;
+  occurred_at: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  user_id: string | null;
+  actor_name: string | null;
+  actor_role: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  details: Record<string, unknown>;
+  severity: 'info' | 'notice' | 'warning' | 'critical';
+  created_at: string;
+  total_count: number;
+}
+
+export type DeletionRequestStatus = 'pending' | 'processing' | 'completed' | 'rejected';
+
+export interface AccountDeletionRequest {
+  id: string;
+  user_id: string;
+  email: string;
+  full_name?: string;
+  reason?: string;
+  status: DeletionRequestStatus;
+  admin_notes?: string;
+  processed_at?: string | null;
+  requested_at: string;
+}
+
+// =============================================================================
+// Contact and content
+// =============================================================================
+
+export type ContactMessageStatus = 'new' | 'read' | 'responded' | 'closed' | 'spam';
+
+export interface ContactMessage {
+  id: string;
+  full_name: string;
+  email: string;
+  phone?: string;
+  subject: string;
+  message: string;
+  status: ContactMessageStatus;
+  admin_notes?: string;
+  created_at: string;
+}
+
+export interface SecurityServiceRequest {
+  id: string;
+  full_name: string;
+  email: string;
+  phone?: string;
+  company_name?: string;
+  service_type: string;
+  location?: string;
+  message: string;
+  status: 'pending' | 'contacted' | 'in_progress' | 'completed' | 'cancelled';
+  admin_notes?: string;
+  created_at: string;
+}
+
+export interface BlogPost {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt?: string;
+  body: string;
+  cover_image_url?: string;
+  category: string;
+  tags: string[];
+  author_name?: string;
+  read_minutes?: number;
+  status: 'draft' | 'published' | 'archived';
+  published_at?: string | null;
+  created_at: string;
 }

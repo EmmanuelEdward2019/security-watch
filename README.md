@@ -2,217 +2,243 @@
 
 **...your concern**
 
-A comprehensive, production-ready platform integrating three systems: **Investigative Services**, **Institutional Transparency & Media**, and **Property Verification & Real Estate Marketplace**.
+A Nigerian civic-tech platform combining three systems: **Investigative
+Services**, **Institutional Transparency & Media**, and **Property Verification
+& Real Estate**, plus **Fountain Source** — a public enquiry funnel for corporate
+security contracts.
+
+- [SECURITY.md](SECURITY.md) — the authorization model. Read this before changing anything under `supabase/`.
+- [DEPLOYMENT.md](DEPLOYMENT.md) — migrations, secrets, webhooks, and how to verify the hardening took.
 
 ---
 
-## Tech Stack
+## Tech stack
 
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19, TypeScript, Tailwind CSS v4, Framer Motion |
 | State | Zustand |
-| Backend | Supabase (PostgreSQL, Auth, Storage, Realtime, Edge Functions) |
-| Payments | Stripe (international), Paystack (Nigeria/West Africa) |
-| Email | Resend |
+| Backend | Supabase (PostgreSQL + RLS, Auth, Storage, Realtime, Edge Functions) |
+| Payments | Paystack — server-initialized, webhook-verified |
+| Email | Resend, via Edge Functions |
 | Build | Vite 8 |
+
+There is no application server. The browser talks directly to Postgres, so
+**authorization lives in the database** — RLS policies, column guard triggers,
+and `SECURITY DEFINER` functions. The client-side route table in
+`src/lib/rbac.ts` hides navigation; it is not a security boundary.
 
 ---
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
-- Node.js 18+
-- A Supabase project (free tier works)
-- Stripe & Paystack accounts (for payments)
-- Resend account (for emails)
+- Node.js 20+
+- A Supabase project
+- A Paystack account (for payments)
+- A Resend account with a verified sending domain (for email)
 
-### 1. Install Dependencies
+### 1. Install and configure
 
 ```bash
 npm install
-```
-
-### 2. Configure Environment
-
-```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your credentials:
+Fill in `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_SITE_URL`. Only
+`VITE_`-prefixed variables reach the browser — never put a secret in `.env`.
+Server-side secrets go in Supabase Edge Function secrets; see
+[DEPLOYMENT.md](DEPLOYMENT.md#2-rotate-the-credentials).
 
-```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
-VITE_PAYSTACK_PUBLIC_KEY=pk_test_xxx
-VITE_RESEND_API_KEY=re_xxx
-```
-
-### 3. Set Up Database
-
-Run the migration SQL in your Supabase SQL Editor or via CLI:
+### 2. Set up the database
 
 ```bash
-# Using Supabase CLI
+supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
-
-# Or manually copy supabase/migrations/001_initial_schema.sql
-# into the Supabase Dashboard → SQL Editor → Run
 ```
 
-Then run the seed data:
+Migrations must be applied in order. `004` prints a warning listing any account
+holding a privileged role that was never admin-confirmed — read it.
+
+### 3. Deploy the Edge Functions
 
 ```bash
-# Copy supabase/seed/seed.sql into the SQL Editor
-```
-
-### 4. Deploy Edge Functions
-
-```bash
-supabase functions deploy match-investigator
 supabase functions deploy send-notification-email
+supabase functions deploy payments-initialize
+supabase functions deploy match-investigator
 supabase functions deploy generate-report
+supabase functions deploy admin-process-deletion
+
+# These authenticate themselves by signature rather than by JWT
+supabase functions deploy auth-send-email  --no-verify-jwt
+supabase functions deploy payments-webhook --no-verify-jwt
+supabase functions deploy public-enquiry   --no-verify-jwt
 ```
 
-Set secrets for Edge Functions:
+Storage buckets and their policies are created by `006_storage_hardening.sql` —
+do not create them by hand in the dashboard, or the path-scoped policies will not
+match.
+
+### 4. Run
 
 ```bash
-supabase secrets set RESEND_API_KEY=re_xxx
+npm run dev     # http://localhost:5173
+npm run build   # production build
+npm run lint    # ESLint
 ```
-
-### 5. Create Storage Buckets
-
-In Supabase Dashboard → Storage, create these buckets:
-
-- `evidence` (private)
-- `avatars` (public)
-- `property-images` (public)
-- `property-documents` (private)
-- `media-reports` (public)
-- `kyc-documents` (private)
-- `chat-files` (private)
-
-### 6. Run Development Server
-
-```bash
-npm run dev
-```
-
-Visit `http://localhost:5173`
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
-├── public/
-│   └── assets/           # Logo, static assets
 ├── src/
 │   ├── components/
-│   │   ├── ui/           # Reusable UI components (Button, Card, Modal, etc.)
-│   │   ├── layout/       # Sidebar, Header, DashboardLayout
-│   │   ├── auth/         # ProtectedRoute
-│   │   ├── cases/        # CaseCard, EvidenceTimeline, CaseStatusTracker
-│   │   ├── property/     # PropertyCard
-│   │   ├── media/        # ScoreCard, InstitutionCard
-│   │   ├── messaging/    # ConversationList, ChatWindow, MessageInput
-│   │   └── payments/     # PaymentModal
-│   ├── pages/
-│   │   ├── auth/         # Login, Register, ProfileCompletion
-│   │   ├── dashboard/    # Dashboard, Profile, Settings, Notifications
-│   │   ├── cases/        # CaseList, CreateCase, CaseDetail, AgentVerification
-│   │   ├── property/     # PropertyList, PropertyDetail, CreateProperty, Landlord/Tenant
-│   │   ├── media/        # MediaFeed, MediaDetail, UploadMedia, Institutions
-│   │   ├── admin/        # Admin Dashboard, User/Case/Property/Media Management
-│   │   ├── messaging/    # MessagingPage
-│   │   └── payments/     # PaymentPage, PaymentHistory
-│   ├── stores/           # Zustand stores (auth, case, message, property, media, notification, payment)
-│   ├── services/         # Business logic (matching, payments, audit)
-│   ├── lib/              # Supabase client, utilities
-│   ├── types/            # TypeScript type definitions
-│   └── utils/            # Helper functions
-├── supabase/
-│   ├── migrations/       # PostgreSQL schema with RLS
-│   ├── functions/        # Edge Functions (matching, email, reports)
-│   └── seed/             # Seed data
+│   │   ├── ui/           Button, Card, Modal, DataTable, FileUpload, …
+│   │   ├── layout/       Sidebar, Header, DashboardLayout
+│   │   ├── auth/         ProtectedRoute
+│   │   ├── cases/        CaseCard, EvidenceTimeline, CaseStatusTracker
+│   │   ├── property/     PropertyCard
+│   │   ├── media/        ScoreCard, InstitutionCard
+│   │   ├── messaging/    ConversationList, ChatWindow, MessageInput
+│   │   └── payments/     PaymentModal
+│   ├── pages/            Route components, lazily imported by the router
+│   ├── stores/           Zustand stores — read/write through RPCs where privileged
+│   ├── services/         paymentService, matchingService, auditService,
+│   │                     caseWorkService, adminService, propertyExtrasService
+│   ├── lib/              supabase client + storage helpers, email
+│   ├── types/            Shared TypeScript definitions
+│   └── router.tsx        Route manifest with lazy imports
+└── supabase/
+    ├── migrations/       001–003 original schema · 004–008 hardening & features
+    ├── functions/        Edge Functions
+    └── seed/             Institution seed data
 ```
 
 ---
 
-## User Roles
+## User roles
 
-| Role | Access |
-|------|--------|
-| Complainant | Create cases, upload evidence, track case progress |
-| Investigator | Receive case assignments, manage investigations |
-| Lawyer | Handle legal processing of cases |
-| Medical/Forensic Expert | Provide expert analysis on cases |
-| Witness/Informant | Submit witness reports |
-| Landlord | List properties, manage tenants, handle verification |
-| Tenant/Buyer | Browse properties, submit requests |
-| Media Agent | Upload institutional reports, monitor institutions |
-| Admin | Full platform control, approvals, analytics |
+Roles marked **verified** are not self-service: registering for one records a
+request, and an administrator grants it after reviewing the applicant's KYC
+documents and guarantors. This is deliberate — those roles can see other people's
+case files.
+
+| Role | Granted | Access |
+|------|---------|--------|
+| Complainant | on signup | File cases, upload evidence, track progress |
+| Witness/Informant | on signup | Submit witness reports |
+| Landlord | on signup | List properties, manage tenants and enquiries |
+| Tenant/Buyer | on signup | Browse, save, request verification |
+| Media Agent | on signup | Field recording, institution reports and ratings |
+| Investigator | **verified** | Receive assignments, file investigation reports |
+| Lawyer | **verified** | File legal documents against a case |
+| Medical/Forensic Expert | **verified** | Record forensic analyses on evidence |
+| Administrator | by an existing admin | Full oversight, approvals, audit trail |
 
 ---
 
-## Core Modules
+## Core modules
 
-### 1. Investigative Services
-- Case creation with evidence uploads
-- SHA-256 file hashing and chain of custody
-- AI-powered agent matching (Edge Function)
-- Case status tracking through 7 stages
-- Multi-step agent verification with guarantor system
+### 1. Investigative services
 
-### 2. Institutional Transparency & Media
-- Monitor police, hospitals, schools, courts, markets
-- Upload and publish video/audio/photo reports
-- GPS and timestamp auto-attachment
-- 5-metric performance scoring system
-- Institution rankings and downloadable reports
+Case filing across eleven categories with urgency and geolocation. Evidence is
+hashed with SHA-256 at upload and **re-verified on every read** — a hash nobody
+checks proves nothing. The chain-of-custody log is written by the database from
+the authenticated identity, not by the client, and grows only through
+`append_custody_entry`. A filed exhibit can never be replaced: the evidence
+bucket has no update policy.
 
-### 3. Property Verification & Real Estate
-- Property listings with image galleries
-- Document-based verification workflow
-- Landlord dashboard with tenant management
-- Tenant property requests and background checks
-- Marketplace with filtering by location, price, type
+Cases move through seven stages under a role-aware state machine: an assigned
+professional may advance their own stage, a complainant may withdraw, only an
+admin may move a case anywhere. Assignment is admin-confirmed and re-validates
+that the assignee holds the role and has passed verification — the matching
+engine ranks candidates but does not decide.
 
-### 4. Secure Communication
-- Real-time messaging (Supabase Realtime)
-- 1:1 and group case chat
-- File sharing in conversations
-- Read receipts
+Investigators file **investigation reports**; lawyers file **legal documents**;
+forensic experts record **analyses** against a specific exhibit.
 
-### 5. Payment System
-- Stripe integration (international)
-- Paystack integration (Nigeria/West Africa)
-- Payment history and receipts
-- Admin payment monitoring
+### 2. Institutional transparency & media
+
+Media agents record video, audio and photos in the field with GPS and timestamp
+stamped onto the report and a SHA-256 recorded. Everything enters as
+`pending_review`: publication is an administrator's decision, which is what keeps
+unreviewed allegations about named police commands and hospitals off the public
+archive.
+
+Citizens rate institutions on five measures. Ratings are **one per person per
+institution**, and the overall score is a generated column computed by Postgres —
+so a published ranking cannot be stuffed or forged.
+
+### 3. Property verification & real estate
+
+Listings with image galleries and title documents. A tenant requests independent
+verification; the request enters the admin review queue only once the fee
+settles. The **verified badge is granted by an administrator** and is not writable
+by the owner — that is the whole value of it.
+
+### 4. Secure communication
+
+Realtime 1:1 and case-group messaging. Membership is granted only by an RPC that
+verifies the caller belongs in the thread. Attachments live in a private bucket
+scoped to the conversation and are read through short-lived signed URLs.
+
+### 5. Payments
+
+Paystack, server-side. The client names a *purpose*; the amount comes from the
+`service_prices` catalogue on the server. Checkout happens on Paystack's hosted
+page, and a payment is marked complete only by a webhook that verifies the HMAC
+signature, re-fetches the transaction from Paystack, and checks the amount
+matches what was priced. The client cannot influence the amount, the status or
+the reference.
+
+Stripe is **not** implemented.
 
 ---
 
 ## Security
 
-- **Row Level Security (RLS)** on all tables
-- **JWT-based authentication** via Supabase Auth
-- **File access restrictions** via storage policies
-- **Audit logging** for all critical operations
-- **Role-based access control** enforced at database and frontend levels
-- **Evidence integrity** via SHA-256 hashing and chain of custody
+Fully documented in [SECURITY.md](SECURITY.md). In summary:
+
+- **RLS on every table**, with column-level guards on any field that encodes
+  trust — a role, a verification status, a published flag, a money amount.
+- **Privileged writes go through `SECURITY DEFINER` RPCs** that check the caller.
+  Direct writes to protected columns are reverted and logged as
+  `guard_violation` at critical severity.
+- **Signup cannot grant a privileged role.**
+- **Storage is path-scoped**; private buckets are read through signed URLs and
+  never accept an overwrite.
+- **Audit trail written by database triggers**, not the application. Client
+  INSERT on `audit_logs` is revoked, so entries can be neither forged nor
+  suppressed.
+- **Edge functions authorize the caller** before touching the service-role key. A
+  bare anon key is not authorization — it ships in the browser bundle.
+- **Payments are provider-verified**, never self-declared.
+- **Security headers including a CSP** are set in `vercel.json`.
+
+Report a vulnerability to `security@thesecuritywatch.com` — please not a public
+issue.
 
 ---
 
-## Scripts
+## Known limitations
 
-```bash
-npm run dev       # Start development server
-npm run build     # Production build
-npm run preview   # Preview production build
-npm run lint      # Run ESLint
-```
+Stated plainly rather than left to be discovered:
+
+- **No automated test suite.** The highest-value thing to add is a suite that
+  asserts a non-admin cannot escalate — see the manual probes in
+  [DEPLOYMENT.md](DEPLOYMENT.md#6-verify-the-hardening-actually-took).
+- **No error tracking or alerting.** Sentry on the frontend and edge functions,
+  plus an alert on `guard_violation`, are the next operational step.
+- **Messages are not end-to-end encrypted.** `is_encrypted` exists on the table
+  and is always `false`. Access is controlled by RLS, which protects against
+  other users but not against a database compromise. Envelope encryption for
+  witness channels specifically is a worthwhile addition.
+- **`react-hooks/set-state-in-effect` is set to warn**, not error. Every
+  occurrence is a `useCallback` loader that opens with `setLoading(true)` — one
+  extra render pass, idiomatic, and not worth restructuring twenty loaders to
+  satisfy.
 
 ---
 

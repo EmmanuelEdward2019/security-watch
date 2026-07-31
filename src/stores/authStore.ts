@@ -1,314 +1,378 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { Profile, UserRole } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { supabase, REMEMBER_ME_KEY } from '@/lib/supabase';
 
+/**
+ * Auth state.
+ *
+ * Tokens are deliberately NOT held here and NOT persisted by this store. The
+ * store used to mirror the access and refresh tokens into localStorage under
+ * `tsw-auth` alongside Supabase's own copy, which doubled the blast radius of
+ * any XSS for no benefit. The Supabase client owns the session; this store only
+ * tracks whether one exists and who it belongs to.
+ *
+ * Where the session is stored — localStorage or sessionStorage — is decided by
+ * the "remember me" flag when the client is constructed (see lib/supabase.ts).
+ */
 interface AuthState {
   user: Profile | null;
-  session: { access_token: string; refresh_token: string } | null;
+  /** True when a Supabase session is active. Never holds token material. */
+  hasSession: boolean;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /** Set when the account holds a role it has not been granted yet. */
+  pendingRoleRequest: UserRole | null;
 
   setUser: (user: Profile | null) => void;
-  setSession: (session: { access_token: string; refresh_token: string } | null) => void;
   setLoading: (loading: boolean) => void;
 
-  signUp: (email: string, password: string, role: UserRole, fullName: string) => Promise<{ error: string | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null; user?: Profile | null }>;
-  signInWithOtp: (phone: string) => Promise<{ error: string | null }>;
-  verifyOtp: (phone: string, token: string) => Promise<{ error: string | null; user?: Profile | null }>;
+  signUp: (
+    email: string,
+    password: string,
+    role: UserRole,
+    fullName: string
+  ) => Promise<{ error: string | null; needsVerification?: boolean }>;
+  signIn: (
+    email: string,
+    password: string,
+    rememberMe?: boolean
+  ) => Promise<{ error: string | null; user?: Profile | null }>;
+  verifyEmailOtp: (
+    email: string,
+    token: string
+  ) => Promise<{ error: string | null; user?: Profile | null }>;
+  resendEmailOtp: (email: string) => Promise<{ error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  deleteAccount: () => Promise<{ error: string | null }>;
+  requestAccountDeletion: (reason?: string) => Promise<{ error: string | null }>;
   fetchProfile: (userId: string) => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: string | null }>;
   initialize: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      session: null,
-      isLoading: true,
-      isAuthenticated: false,
+/**
+ * Fields a user is allowed to change on their own profile.
+ *
+ * `role` and `kyc_status` are pinned by a database trigger, so sending them
+ * would be reverted server-side anyway — they are filtered here so the client
+ * never generates a write that gets logged as an escalation attempt.
+ */
+const SELF_EDITABLE_FIELDS = [
+  'full_name',
+  'phone',
+  'avatar_url',
+  'bio',
+  'location',
+] as const;
 
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
-      setSession: (session) => set({ session }),
-      setLoading: (isLoading) => set({ isLoading }),
-
-      signUp: async (email, password, role, fullName) => {
-        try {
-          const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
-          const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-              data: {
-                full_name: fullName,
-                role,
-              },
-              emailRedirectTo: `${siteUrl}/login`,
-            },
-          });
-          if (error) return { error: error.message };
-          if (!data.user) return { error: 'Signup failed' };
-
-          if (data.session) {
-            set({
-              session: {
-                access_token: data.session.access_token,
-                refresh_token: data.session.refresh_token,
-              },
-            });
-            await get().fetchProfile(data.user.id);
-          }
-          return { error: null };
-        } catch (e: any) {
-          return { error: e?.message || 'An unexpected error occurred during signup' };
-        }
-      },
-
-      signIn: async (email, password) => {
-        try {
-          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-          if (error) return { error: error.message };
-          if (!data.user) return { error: 'Login failed' };
-
-          if (data.session) {
-            set({
-              session: {
-                access_token: data.session.access_token,
-                refresh_token: data.session.refresh_token,
-              },
-            });
-          }
-
-          await get().fetchProfile(data.user.id);
-          return { error: null, user: get().user };
-        } catch (e: any) {
-          return { error: e?.message || 'An unexpected error occurred during login' };
-        }
-      },
-
-      signInWithOtp: async (phone) => {
-        const { error } = await supabase.auth.signInWithOtp({ phone });
-        if (error) return { error: error.message };
-        return { error: null };
-      },
-
-      verifyOtp: async (phone, token) => {
-        const { data, error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
-        if (error) return { error: error.message };
-        if (data.user) {
-          await get().fetchProfile(data.user.id);
-        }
-        return { error: null, user: get().user };
-      },
-
-      resetPassword: async (email) => {
-        const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${siteUrl}/reset-password`,
-        });
-        if (error) return { error: error.message };
-        return { error: null };
-      },
-
-      deleteAccount: async () => {
-        const user = get().user;
-        if (!user) return { error: 'Not authenticated' };
-        try {
-          // Insert a deletion request record so admins can process it
-          const { error: reqErr } = await supabase
-            .from('account_deletion_requests')
-            .insert({
-              user_id: user.user_id,
-              email: user.email,
-              full_name: user.full_name,
-              requested_at: new Date().toISOString(),
-              status: 'pending',
-            });
-
-          if (reqErr) {
-            // Table may not exist yet — fall back to a notification to admin
-            await supabase.from('notifications').insert({
-              user_id: user.user_id,
-              title: 'Account Deletion Requested',
-              message: `User ${user.email} has requested account deletion. Please process via admin panel.`,
-              type: 'warning',
-              read: false,
-              created_at: new Date().toISOString(),
-            });
-          }
-
-          // Sign out immediately so user can't continue using the account
-          await get().signOut();
-          return { error: null };
-        } catch (e: unknown) {
-          return { error: e instanceof Error ? e.message : 'Failed to submit deletion request' };
-        }
-      },
-
-      signOut: async () => {
-        set({ user: null, session: null, isAuthenticated: false });
-        try {
-          // Attempt graceful sign out
-          await supabase.auth.signOut();
-        } catch (e) {
-          console.error('Sign out error:', e);
-        } finally {
-          // Force clear local storage to prevent auto-login loops if network fails
-          try {
-            const keysToRemove = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const key = localStorage.key(i);
-              if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
-                keysToRemove.push(key);
-              }
-            }
-            keysToRemove.forEach(k => localStorage.removeItem(k));
-          } catch (storageErr) {
-            console.error('Local storage cleanup error:', storageErr);
-          }
-        }
-      },
-
-      fetchProfile: async (userId) => {
-        try {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('user_id', userId)
-            .single();
-
-          // Abort if the user logged out while we were fetching
-          if (!get().session) return;
-
-          if (!error && data) {
-            set({ user: data as Profile, isAuthenticated: true });
-          } else {
-            const { data: authData } = await supabase.auth.getUser();
-            if (!authData?.user) {
-              set({ user: null, session: null, isAuthenticated: false });
-              return;
-            }
-            const meta = authData.user.user_metadata;
-            set({
-              user: {
-                id: userId,
-                user_id: userId,
-                email: meta?.email || authData.user.email || '',
-                full_name: meta?.full_name || '',
-                role: (meta?.role as UserRole) || 'complainant',
-                kyc_status: 'pending' as const,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              },
-              isAuthenticated: true,
-            });
-          }
-        } catch {
-          if (get().session) {
-            set({ isAuthenticated: true });
-          }
-        }
-      },
-
-      updateProfile: async (updates) => {
-        const user = get().user;
-        if (!user) return { error: 'Not authenticated' };
-
-        const { error } = await supabase
-          .from('profiles')
-          .update({ ...updates, updated_at: new Date().toISOString() })
-          .eq('user_id', user.user_id);
-
-        if (error) return { error: error.message };
-
-        set({ user: { ...user, ...updates } });
-        return { error: null };
-      },
-
-      initialize: async () => {
-        set({ isLoading: true });
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            set({
-              session: {
-                access_token: session.access_token,
-                refresh_token: session.refresh_token,
-              },
-            });
-            await get().fetchProfile(session.user.id);
-          }
-        } finally {
-          set({ isLoading: false });
-        }
-
-        supabase.auth.onAuthStateChange((_event, session) => {
-          if (session?.user) {
-            set({
-              session: {
-                access_token: session.access_token,
-                refresh_token: session.refresh_token,
-              },
-            });
-            // Detach from current execution to prevent Supabase internal session Mutex deadlock
-            setTimeout(() => {
-              get().fetchProfile(session.user.id);
-            }, 0);
-          } else {
-            set({ user: null, session: null, isAuthenticated: false });
-          }
-        });
-
-        if (typeof window !== 'undefined') {
-          window.addEventListener('storage', (e) => {
-            if (e.key && e.key.startsWith('sb-') && e.key.endsWith('-auth-token')) {
-              if (!e.newValue) {
-                set({ user: null, session: null, isAuthenticated: false });
-              }
-            }
-            if (e.key === 'tsw-auth') {
-              try {
-                const newState = JSON.parse(e.newValue || '{}');
-                if (!newState?.state?.session) {
-                  set({ user: null, session: null, isAuthenticated: false });
-                }
-              } catch {
-                // Ignore parse errors
-              }
-            }
-          });
-
-          // If "Remember me" was not checked, clear the session when the browser closes.
-          // The flag is checked INSIDE the handler so it reflects whatever the user chose
-          // during the session (not just the value at startup before they logged in).
-          window.addEventListener('beforeunload', () => {
-            try {
-              const remembered = localStorage.getItem('tsw-remember-me') === '1';
-              if (!remembered) {
-                const keysToRemove: string[] = [];
-                for (let i = 0; i < localStorage.length; i++) {
-                  const key = localStorage.key(i);
-                  if (key && ((key.startsWith('sb-') && key.endsWith('-auth-token')) || key === 'tsw-auth')) {
-                    keysToRemove.push(key);
-                  }
-                }
-                keysToRemove.forEach((k) => localStorage.removeItem(k));
-              }
-            } catch {
-              // Non-critical — ignore storage errors
-            }
-          });
-        }
-      },
-    }),
-    {
-      name: 'tsw-auth',
-      partialize: (state) => ({ session: state.session }),
+function pickSelfEditable(updates: Partial<Profile>): Partial<Profile> {
+  const out: Record<string, unknown> = {};
+  for (const key of SELF_EDITABLE_FIELDS) {
+    if (key in updates && updates[key] !== undefined) {
+      out[key] = updates[key];
     }
-  )
-);
+  }
+  return out as Partial<Profile>;
+}
+
+function setRememberMe(remember: boolean) {
+  try {
+    if (remember) {
+      window.localStorage.setItem(REMEMBER_ME_KEY, '1');
+    } else {
+      window.localStorage.removeItem(REMEMBER_ME_KEY);
+    }
+  } catch {
+    /* private mode — the default (do not remember) applies */
+  }
+}
+
+function friendlyAuthError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('invalid login credentials')) {
+    return 'That email and password do not match an account.';
+  }
+  if (m.includes('email not confirmed')) {
+    return 'Confirm your email address first — check your inbox for the code.';
+  }
+  if (m.includes('token has expired') || m.includes('expired')) {
+    return 'That code has expired. Request a new one.';
+  }
+  if (m.includes('rate limit') || m.includes('too many')) {
+    return 'Too many attempts. Wait a minute and try again.';
+  }
+  if (m.includes('user already registered')) {
+    return 'An account with that email already exists. Sign in instead.';
+  }
+  return message;
+}
+
+export const useAuthStore = create<AuthState>()((set, get) => ({
+  user: null,
+  hasSession: false,
+  isLoading: true,
+  isAuthenticated: false,
+  pendingRoleRequest: null,
+
+  setUser: (user) =>
+    set({
+      user,
+      isAuthenticated: !!user,
+      pendingRoleRequest:
+        user && user.requested_role && user.requested_role !== user.role
+          ? (user.requested_role as UserRole)
+          : null,
+    }),
+
+  setLoading: (isLoading) => set({ isLoading }),
+
+  signUp: async (email, password, role, fullName) => {
+    try {
+      const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          // The role here is a *request*, not a grant. The database trigger
+          // only honours self-service roles and records the rest for admin
+          // review — see migration 004. Sending 'admin' achieves nothing.
+          data: { full_name: fullName, role },
+          emailRedirectTo: `${siteUrl}/login`,
+        },
+      });
+
+      if (error) return { error: friendlyAuthError(error.message) };
+      if (!data.user) return { error: 'Signup failed. Please try again.' };
+
+      if (data.session) {
+        set({ hasSession: true });
+        await get().fetchProfile(data.user.id);
+        return { error: null, needsVerification: false };
+      }
+
+      return { error: null, needsVerification: true };
+    } catch (e: unknown) {
+      return {
+        error: e instanceof Error ? friendlyAuthError(e.message) : 'Unexpected error during signup',
+      };
+    }
+  },
+
+  signIn: async (email, password, rememberMe = false) => {
+    try {
+      // Recorded before sign-in so the client picks the right storage on the
+      // next page load.
+      setRememberMe(rememberMe);
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { error: friendlyAuthError(error.message) };
+      if (!data.user) return { error: 'Sign in failed. Please try again.' };
+
+      set({ hasSession: !!data.session });
+      await get().fetchProfile(data.user.id);
+      return { error: null, user: get().user };
+    } catch (e: unknown) {
+      return {
+        error: e instanceof Error ? friendlyAuthError(e.message) : 'Unexpected error during sign in',
+      };
+    }
+  },
+
+  verifyEmailOtp: async (email, token) => {
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: token.trim(),
+        type: 'email',
+      });
+      if (error) return { error: friendlyAuthError(error.message) };
+
+      set({ hasSession: !!data.session });
+      if (data.user) {
+        await get().fetchProfile(data.user.id);
+      }
+      return { error: null, user: get().user };
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? friendlyAuthError(e.message) : 'Could not verify that code' };
+    }
+  },
+
+  resendEmailOtp: async (email) => {
+    try {
+      const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo: `${siteUrl}/login` },
+      });
+      if (error) return { error: friendlyAuthError(error.message) };
+      return { error: null };
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? friendlyAuthError(e.message) : 'Could not resend the code' };
+    }
+  },
+
+  resetPassword: async (email) => {
+    const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${siteUrl}/reset-password`,
+    });
+    if (error) return { error: friendlyAuthError(error.message) };
+    return { error: null };
+  },
+
+  requestAccountDeletion: async (reason) => {
+    const user = get().user;
+    if (!user) return { error: 'You need to be signed in.' };
+
+    // Goes through an RPC that notifies every administrator. The old client-side
+    // insert failed silently and then "notified" the departing user, so erasure
+    // requests were dropped on the floor.
+    const { error } = await supabase.rpc('request_account_deletion', {
+      p_reason: reason ?? null,
+    });
+
+    if (error) return { error: error.message };
+
+    await get().signOut();
+    return { error: null };
+  },
+
+  signOut: async () => {
+    set({ user: null, hasSession: false, isAuthenticated: false, pendingRoleRequest: null });
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('Sign out error:', e);
+    } finally {
+      // If the network call failed, the client may still hold a session in
+      // storage. Clear both stores so a failed sign-out cannot leave the next
+      // visitor signed in.
+      for (const store of [window.localStorage, window.sessionStorage]) {
+        try {
+          const keys: string[] = [];
+          for (let i = 0; i < store.length; i++) {
+            const key = store.key(i);
+            if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+              keys.push(key);
+            }
+          }
+          keys.forEach((k) => store.removeItem(k));
+        } catch {
+          /* storage unavailable — nothing to clear */
+        }
+      }
+      try {
+        // Legacy key from when this store persisted tokens itself.
+        window.localStorage.removeItem('tsw-auth');
+        window.localStorage.removeItem(REMEMBER_ME_KEY);
+      } catch {
+        /* nothing to do */
+      }
+    }
+  },
+
+  fetchProfile: async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Could not load profile:', error.message);
+      }
+
+      if (data) {
+        get().setUser(data as Profile);
+        return;
+      }
+
+      // No profile row yet — the signup trigger may not have run. Fall back to
+      // the auth record so the app can still route, but never trust metadata
+      // for the role: default to the least privileged value.
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData?.user) {
+        set({ user: null, hasSession: false, isAuthenticated: false });
+        return;
+      }
+
+      get().setUser({
+        id: userId,
+        user_id: userId,
+        email: authData.user.email ?? '',
+        full_name: (authData.user.user_metadata?.full_name as string) ?? '',
+        role: 'complainant',
+        kyc_status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.error('Profile fetch failed:', e);
+    }
+  },
+
+  updateProfile: async (updates) => {
+    const user = get().user;
+    if (!user) return { error: 'You need to be signed in.' };
+
+    const safe = pickSelfEditable(updates);
+    if (Object.keys(safe).length === 0) {
+      return { error: null };
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(safe)
+      .eq('user_id', user.user_id)
+      .select()
+      .maybeSingle();
+
+    if (error) return { error: error.message };
+
+    // Trust what came back rather than the optimistic merge — the database may
+    // legitimately have pinned a field we tried to send.
+    get().setUser((data as Profile) ?? { ...user, ...safe });
+    return { error: null };
+  },
+
+  initialize: async () => {
+    set({ isLoading: true });
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        set({ hasSession: true });
+        await get().fetchProfile(session.user.id);
+      }
+    } finally {
+      set({ isLoading: false });
+    }
+
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        set({ hasSession: true });
+        // Deferred to a macrotask: calling back into the Supabase client from
+        // inside this handler deadlocks its internal session mutex.
+        setTimeout(() => {
+          void get().fetchProfile(session.user.id);
+        }, 0);
+      } else if (event === 'SIGNED_OUT') {
+        set({ user: null, hasSession: false, isAuthenticated: false, pendingRoleRequest: null });
+      }
+    });
+
+    if (typeof window !== 'undefined') {
+      // Signing out in one tab signs out the others.
+      window.addEventListener('storage', (e) => {
+        if (!e.key) return;
+        if (e.key.startsWith('sb-') && e.key.endsWith('-auth-token') && !e.newValue) {
+          set({ user: null, hasSession: false, isAuthenticated: false, pendingRoleRequest: null });
+        }
+      });
+    }
+  },
+}));

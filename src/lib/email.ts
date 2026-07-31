@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 
-/** Matches `TransactionalTemplateId` in Edge Function */
+/** Matches `TransactionalTemplateId` in the send-notification-email function. */
 export type EmailTemplateId =
   | 'payment_received'
   | 'payment_failed'
@@ -35,27 +35,43 @@ export interface EmailTemplateData {
 }
 
 /**
- * Send a branded transactional email via the `send-notification-email` Edge Function (Resend).
+ * Sends a branded transactional email.
+ *
+ * Recipients are addressed by user id, never by email address. The function
+ * resolves the address server-side and refuses to mail anyone the caller does
+ * not share a case, conversation or property enquiry with — which is what stops
+ * the endpoint being usable as a general mailer. Passing a raw address is an
+ * admin-only capability and is not exposed here.
+ *
+ * Delivery is best-effort by design: a failed notification email must never
+ * fail the action that triggered it.
  */
 export async function sendTemplatedEmail(
-  to: string,
+  recipientUserId: string,
   template: EmailTemplateId,
   data?: EmailTemplateData
-) {
-  const { data: res, error } = await supabase.functions.invoke('send-notification-email', {
-    body: { to, template, data: data ?? {} },
-  });
-  if (error) throw new Error(error.message);
-  return res as { success?: boolean; id?: string; error?: string };
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: res, error } = await supabase.functions.invoke('send-notification-email', {
+      body: { recipientUserId, template, data: data ?? {} },
+    });
+
+    if (error) {
+      console.warn(`[email] ${template} to ${recipientUserId} failed:`, error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: (res as { success?: boolean })?.success ?? true };
+  } catch (e) {
+    console.warn(`[email] ${template} threw:`, (e as Error).message);
+    return { success: false, error: (e as Error).message };
+  }
 }
 
-/**
- * Send raw HTML (legacy). Prefer `sendTemplatedEmail` for consistent branding.
- */
-export async function sendRawEmail(to: string, subject: string, html: string) {
-  const { data: res, error } = await supabase.functions.invoke('send-notification-email', {
-    body: { to, subject, html },
-  });
-  if (error) throw new Error(error.message);
-  return res as { success?: boolean; id?: string; error?: string };
+/** Fire-and-forget wrapper for notification paths that must not block. */
+export function notifyByEmail(
+  recipientUserId: string,
+  template: EmailTemplateId,
+  data?: EmailTemplateData
+): void {
+  void sendTemplatedEmail(recipientUserId, template, data);
 }

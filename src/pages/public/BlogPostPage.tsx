@@ -1,33 +1,53 @@
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, Newspaper } from 'lucide-react';
+import { Spinner } from '@/components/ui';
 import { PublicNav, PublicFooter, ScrollReveal } from '@/components/public';
+import { fetchBlogPost } from '@/services/propertyExtrasService';
+import type { BlogPost } from '@/types';
+import { format } from 'date-fns';
 
-const posts: Record<string, { title: string; date: string; content: string }> = {
-  'avoid-land-scams': {
-    title: 'How to Identify and Avoid Land Fraud in Nigeria',
-    date: '2024-03-15',
-    content: 'Land fraud remains one of the most prevalent financial crimes in Nigeria. Key warning signs include pricing significantly below market value, sellers unwilling to submit to independent verification, and undue pressure to complete payment before documentation is reviewed. To mitigate risk, prospective buyers should always verify ownership through official land registry channels, insist on authenticated copies of survey plans and title documents, conduct a physical inspection of the property, and engage a professional verification service such as The Security Watch before committing any funds.',
-  },
-  'private-investigations': {
-    title: 'How Private Investigations Work on Our Platform',
-    date: '2024-03-10',
-    content: 'When a case is submitted through The Security Watch, it undergoes an initial review and is assigned to a qualified professional based on the nature of the matter and the relevant jurisdiction. The assigned investigator examines all submitted evidence, conducts further enquiries as warranted, and works methodically toward resolution. All communications are handled through secure, confidential channels. Clients can monitor case progress in real time through their personalised dashboard. Investigation timelines vary depending on complexity — ranging from days for straightforward enquiries to several weeks for more involved matters. Regular updates are provided at each milestone.',
-  },
-  'property-verification': {
-    title: 'Understanding Our Property Verification Process',
-    date: '2024-03-05',
-    content: 'The Security Watch conducts independent verification of property ownership by cross-referencing seller claims against official land registry records, examining title deeds, survey plans, and certificates of occupancy for authenticity, and confirming the absence of encumbrances or competing claims. Properties that successfully pass our verification process receive a verified status badge, providing prospective buyers and tenants with an additional layer of confidence. While verification significantly reduces the risk of fraud, it is recommended as one component of a comprehensive due diligence approach.',
-  },
-  'institutional-transparency': {
-    title: 'The Importance of Institutional Transparency',
-    date: '2024-02-28',
-    content: 'Independent oversight drives measurable improvement in institutional performance. The Security Watch deploys trained media agents to conduct anonymous, on-site evaluations of public and private institutions — assessing punctuality, facility maintenance, staff professionalism, and quality of service delivery. The programme is designed to be constructive rather than punitive: institutions that demonstrate high standards receive public recognition and commendation, while those with identified deficiencies are provided with documented recommendations for improvement. The broader objective is to raise the standard of public services for the benefit of all citizens.',
-  },
-};
-
+/**
+ * A single article.
+ *
+ * Read from `blog_posts` rather than a hardcoded map. An unknown slug used to
+ * silently fall through to the land-fraud article, which meant a mistyped or
+ * retired URL served the wrong piece under the wrong heading; it now says the
+ * article could not be found.
+ *
+ * The body is rendered as paragraphs of plain text, deliberately — not as HTML —
+ * so editorial content can never inject markup into the page.
+ */
 export default function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>();
-  const post = slug && posts[slug] ? posts[slug] : posts['avoid-land-scams'];
+  const [post, setPost] = useState<BlogPost | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!slug) {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    void (async () => {
+      const { post: found } = await fetchBlogPost(slug);
+      if (cancelled) return;
+      setPost(found);
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  const paragraphs = (post?.body ?? '')
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 
   return (
     <div className="min-h-screen bg-white">
@@ -36,17 +56,87 @@ export default function BlogPostPage() {
         <article className="py-16 lg:py-24">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
             <ScrollReveal>
-              <Link to="/blog" className="inline-flex items-center gap-2 text-forest-600 hover:underline mb-8">
+              <Link
+                to="/blog"
+                className="inline-flex items-center gap-2 text-forest-600 hover:underline mb-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-forest-500 rounded"
+              >
                 <ArrowLeft className="w-4 h-4" /> Back to blog
               </Link>
-              <div className="flex items-center gap-2 text-sm text-surface-500 mb-4">
-                <Calendar className="w-4 h-4" />
-                {post.date}
-              </div>
-              <h1 className="text-3xl sm:text-4xl font-bold text-surface-900 mb-6">{post.title}</h1>
-              <div className="prose prose-slate max-w-none">
-                <p className="text-lg text-surface-600 leading-relaxed">{post.content}</p>
-              </div>
+
+              {loading ? (
+                <div className="flex justify-center py-16">
+                  <Spinner size="lg" />
+                </div>
+              ) : !post ? (
+                <div className="text-center py-12">
+                  <Newspaper
+                    className="w-12 h-12 text-surface-300 mx-auto mb-4"
+                    strokeWidth={1.5}
+                  />
+                  <h1 className="text-2xl font-bold text-surface-900 mb-2">
+                    We could not find that article
+                  </h1>
+                  <p className="text-surface-600 mb-6">
+                    It may have been retired, or the link may be incomplete.
+                  </p>
+                  <Link to="/blog" className="text-forest-600 font-medium hover:underline">
+                    Browse everything we have published
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-surface-500 mb-4">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4" />
+                      {format(new Date(post.published_at ?? post.created_at), 'd MMMM yyyy')}
+                    </span>
+                    {post.read_minutes ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Clock className="w-4 h-4" />
+                        {post.read_minutes} min read
+                      </span>
+                    ) : null}
+                    {post.author_name && <span>by {post.author_name}</span>}
+                  </div>
+
+                  <h1 className="text-3xl sm:text-4xl font-bold text-surface-900 mb-6 text-balance">
+                    {post.title}
+                  </h1>
+
+                  {post.cover_image_url && (
+                    <img
+                      src={post.cover_image_url}
+                      alt=""
+                      className="w-full rounded-2xl mb-8 object-cover max-h-[420px]"
+                    />
+                  )}
+
+                  {post.excerpt && (
+                    <p className="text-xl text-surface-700 leading-relaxed mb-8">{post.excerpt}</p>
+                  )}
+
+                  <div className="space-y-5">
+                    {paragraphs.map((paragraph, i) => (
+                      <p key={i} className="text-lg text-surface-600 leading-relaxed">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+
+                  {post.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-10 pt-6 border-t border-surface-200">
+                      {post.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-surface-100 px-3 py-1 text-sm text-surface-600"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </ScrollReveal>
           </div>
         </article>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   DataTable,
   type Column,
@@ -8,7 +8,8 @@ import {
   TextArea,
 } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
-import type { Property, PropertyStatus } from '@/types';
+import { setPropertyStatus } from '@/services/adminService';
+import type { Property } from '@/types';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -19,53 +20,59 @@ export function PropertyVerificationTab() {
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    loadProperties();
-  }, []);
-
-  async function loadProperties() {
+  const loadProperties = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('properties')
       .select('*, owner:profiles!owner_id(full_name, avatar_url)')
       .in('status', ['pending', 'unverified'])
       .order('created_at', { ascending: false });
+    if (error) toast.error(error.message);
     setProperties((data as Property[]) ?? []);
     setLoading(false);
-  }
+  }, []);
 
+  useEffect(() => {
+    void loadProperties();
+  }, [loadProperties]);
+
+  /**
+   * Grants the verified badge and marks the title documents checked.
+   *
+   * `properties.status` is pinned by a trigger — an owner used to be able to
+   * stamp their own listing verified, which is the whole value of the badge — so
+   * this goes through an admin-only RPC.
+   */
   const handleApprove = async () => {
     if (!selected) return;
     setProcessing(true);
-    const { error } = await supabase
-      .from('properties')
-      .update({ status: 'verified' as PropertyStatus })
-      .eq('id', selected.id);
+    const { error } = await setPropertyStatus(selected.id, 'verified');
     setProcessing(false);
-    if (error) toast.error(error.message);
-    else {
-      toast.success('Property verified');
-      setSelected(null);
-      setNotes('');
-      loadProperties();
+
+    if (error) {
+      toast.error(error);
+      return;
     }
+    toast.success('Property verified. The badge is now live on the listing.');
+    setSelected(null);
+    setNotes('');
+    void loadProperties();
   };
 
   const handleReject = async () => {
     if (!selected) return;
     setProcessing(true);
-    const { error } = await supabase
-      .from('properties')
-      .update({ status: 'unverified' as PropertyStatus })
-      .eq('id', selected.id);
+    const { error } = await setPropertyStatus(selected.id, 'unverified');
     setProcessing(false);
-    if (error) toast.error(error.message);
-    else {
-      toast.success('Property rejected');
-      setSelected(null);
-      setNotes('');
-      loadProperties();
+
+    if (error) {
+      toast.error(error);
+      return;
     }
+    toast.success('Verification declined.');
+    setSelected(null);
+    setNotes('');
+    void loadProperties();
   };
 
   const columns: Column<Property>[] = [
