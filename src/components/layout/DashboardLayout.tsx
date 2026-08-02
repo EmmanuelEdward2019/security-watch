@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { KycBanner } from '@/components/auth/KycBanner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
@@ -26,6 +27,15 @@ export function DashboardLayout() {
           userRole={user?.role ?? 'complainant'}
         />
         <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">
+          {/*
+            Sits above the routed content on every authenticated screen. A user
+            who never completed verification previously had no way to connect
+            that fact to their case sitting untouched.
+          */}
+          <div className="mb-4 empty:mb-0">
+            <KycBanner />
+          </div>
+
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}

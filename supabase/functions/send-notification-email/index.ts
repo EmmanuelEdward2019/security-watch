@@ -350,9 +350,23 @@ const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? 'https://thesecurity
   .map((o) => o.trim())
   .filter(Boolean);
 
+/**
+ * Vercel deployment URLs for THIS project only.
+ *
+ * Every preview build and the bare project domain live on *.vercel.app, so an
+ * admin testing on a preview URL had their browser block the request before it
+ * was sent — surfacing as "Failed to send a request to the Edge Function",
+ * which reads like a network fault rather than a CORS rejection.
+ *
+ * Scoped to the project slug deliberately. A blanket *.vercel.app rule would let
+ * any application hosted on Vercel call these functions.
+ */
+const VERCEL_ORIGIN = /^https:\/\/security-watch(-[a-z0-9-]+)?\.vercel\.app$/;
+
 function corsFor(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') ?? '';
   const allowed = ALLOWED_ORIGINS.includes(origin)
+    || VERCEL_ORIGIN.test(origin)
     || /^http:\/\/localhost:\d+$/.test(origin)
     || /^http:\/\/127\.0\.0\.1:\d+$/.test(origin);
 

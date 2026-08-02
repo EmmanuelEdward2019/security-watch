@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout';
+import { KycGateProvider } from '@/hooks/useKycGate';
 import { ProtectedRoute } from '@/components/auth';
 import { ScrollToTop } from '@/components/ScrollToTop';
 import { Spinner } from '@/components/ui';
@@ -178,7 +179,9 @@ export const router = createBrowserRouter([
         path: '/app',
         element: (
           <ProtectedRoute>
-            <DashboardLayout />
+            <KycGateProvider>
+          <DashboardLayout />
+        </KycGateProvider>
           </ProtectedRoute>
         ),
         children: [

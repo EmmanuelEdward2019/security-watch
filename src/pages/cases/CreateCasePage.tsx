@@ -4,9 +4,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Check, Upload, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Upload, Loader2 , ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCaseStore } from '@/stores/caseStore';
+import { useKycGate } from '@/hooks/useKycGate';
 import { useAuthStore } from '@/stores/authStore';
 import {
   Button,
@@ -17,6 +18,7 @@ import {
   Modal,
   Card,
   CardContent,
+  LocationPicker,
 } from '@/components/ui';
 import { uploadFile, generateFileHash, buildObjectPath, STORAGE_BUCKETS } from '@/lib/supabase';
 import type { UploadedFile } from '@/components/ui/FileUpload';
@@ -74,6 +76,8 @@ export function CreateCasePage() {
   const [step, setStep] = useState(1);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const { requireKyc } = useKycGate();
+  const [createdUrgency, setCreatedUrgency] = useState<CaseUrgency>('medium');
   const [createdCaseId, setCreatedCaseId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -117,6 +121,10 @@ export function CreateCasePage() {
       toast.error('You must be logged in to create a case');
       return;
     }
+
+    // Prompts an unverified complainant but does NOT stop them. Reporting a
+    // crime is never gated — see useKycGate for why that distinction exists.
+    requireKyc('create_case');
 
     setIsSubmitting(true);
     try {
@@ -178,8 +186,9 @@ export function CreateCasePage() {
       }
 
       setCreatedCaseId(id);
+      setCreatedUrgency(step1Data.urgency as CaseUrgency);
       setShowSuccessModal(true);
-      toast.success('Case created successfully!');
+      toast.success('Case filed. Complete the filing fee to activate it.');
     } catch (err) {
       console.error('Case creation failed:', err);
       toast.error('Something went wrong while creating the case. Please try again.');
@@ -272,28 +281,38 @@ export function CreateCasePage() {
                   transition={{ duration: 0.2 }}
                   className="space-y-4"
                 >
-                  <Input
-                    label="Location"
-                    placeholder="Where did this occur?"
+                  {/*
+                    Replaces three raw fields (a free-text Location plus bare
+                    latitude/longitude number inputs). Those produced case
+                    records whose location read "6.5244, 3.3792" — unusable for
+                    the investigator who has to travel there. The picker resolves
+                    coordinates to a street address and keeps both.
+                  */}
+                  <LocationPicker
+                    label="Where did this occur?"
+                    required
                     error={step2Form.formState.errors.location?.message}
-                    {...step2Form.register('location')}
+                    value={{
+                      location: step2Form.watch('location') ?? '',
+                      latitude: step2Form.watch('latitude')
+                        ? Number(step2Form.watch('latitude'))
+                        : undefined,
+                      longitude: step2Form.watch('longitude')
+                        ? Number(step2Form.watch('longitude'))
+                        : undefined,
+                    }}
+                    onChange={(next) => {
+                      step2Form.setValue('location', next.location, { shouldValidate: true });
+                      step2Form.setValue(
+                        'latitude',
+                        next.latitude != null ? String(next.latitude) : ''
+                      );
+                      step2Form.setValue(
+                        'longitude',
+                        next.longitude != null ? String(next.longitude) : ''
+                      );
+                    }}
                   />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input
-                      label="Latitude (optional)"
-                      placeholder="e.g. 6.5244"
-                      type="number"
-                      step="any"
-                      {...step2Form.register('latitude')}
-                    />
-                    <Input
-                      label="Longitude (optional)"
-                      placeholder="e.g. 3.3792"
-                      type="number"
-                      step="any"
-                      {...step2Form.register('longitude')}
-                    />
-                  </div>
                 </motion.div>
               )}
 
@@ -385,35 +404,68 @@ export function CreateCasePage() {
           setShowSuccessModal(false);
           navigate(createdCaseId ? `/app/cases/${createdCaseId}` : '/app/cases');
         }}
-        title="Case Created Successfully"
+        title="Case filed"
         size="md"
       >
-        <div className="text-center py-4">
-          <div className="mx-auto w-16 h-16 rounded-full bg-brand-100 flex items-center justify-center mb-4">
+        <div className="py-2">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand-100">
             <Check className="text-brand-600" size={32} />
           </div>
-          <p className="text-surface-600 mb-6">
-            Your case has been submitted. Our team will review it and assign an investigator.
+
+          <p className="mb-4 text-center text-surface-600">
+            Your case is on file and an administrator can see it. The next step is the filing fee —
+            an investigator is assigned once it clears.
           </p>
-          <div className="flex gap-3 justify-center">
+
+          {/*
+            Payment comes AFTER the case exists, never before. A crime report is
+            not held behind a paywall; the fee activates the investigation, and
+            the case remains on record either way. The price is read from the
+            service_prices catalogue by the server — urgent filings cost more, so
+            the purpose key follows the urgency chosen on step one.
+          */}
+          <div className="mb-5 rounded-xl border border-surface-200 bg-surface-50 p-4">
+            <p className="text-sm font-medium text-surface-800">Filing fee</p>
+            <p className="mt-0.5 text-sm text-surface-600">
+              {createdUrgency === 'critical' || createdUrgency === 'high'
+                ? 'Priority triage, for high and critical urgency cases.'
+                : 'Standard filing and triage.'}{' '}
+              The exact amount is shown at checkout before you pay anything.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row">
             <Button
-              variant="outline"
-              onClick={() => {
-                setShowSuccessModal(false);
-                navigate('/app/cases');
-              }}
-            >
-              Back to Cases
-            </Button>
-            <Button
+              variant="ghost"
+              className="flex-1"
               onClick={() => {
                 setShowSuccessModal(false);
                 navigate(`/app/cases/${createdCaseId}`);
               }}
             >
-              View Case
+              Pay later
+            </Button>
+            <Button
+              className="flex-1"
+              icon={ArrowRight}
+              onClick={() => {
+                setShowSuccessModal(false);
+                const purpose =
+                  createdUrgency === 'critical' || createdUrgency === 'high'
+                    ? 'case_filing_urgent'
+                    : 'case_filing_standard';
+                navigate(
+                  `/app/payments?purpose=${purpose}&caseId=${encodeURIComponent(createdCaseId ?? '')}`
+                );
+              }}
+            >
+              Continue to payment
             </Button>
           </div>
+
+          <p className="mt-3 text-center text-xs text-surface-400">
+            You can pay later from the case page. Until then the case stays unassigned.
+          </p>
         </div>
       </Modal>
     </div>

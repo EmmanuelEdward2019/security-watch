@@ -376,9 +376,9 @@ export type Database = {
           chain_of_custody: Json
           created_at: string
           description: string | null
-          file_hash: string | null
+          file_hash: string
           file_name: string
-          file_size: number | null
+          file_size: number
           file_type: string
           file_url: string
           id: string
@@ -389,9 +389,9 @@ export type Database = {
           chain_of_custody?: Json
           created_at?: string
           description?: string | null
-          file_hash?: string | null
+          file_hash: string
           file_name: string
-          file_size?: number | null
+          file_size: number
           file_type: string
           file_url: string
           id?: string
@@ -402,9 +402,9 @@ export type Database = {
           chain_of_custody?: Json
           created_at?: string
           description?: string | null
-          file_hash?: string | null
+          file_hash?: string
           file_name?: string
-          file_size?: number | null
+          file_size?: number
           file_type?: string
           file_url?: string
           id?: string
@@ -647,15 +647,31 @@ export type Database = {
       investigators: {
         Row: {
           admin_notes: string | null
+          applied_for_role: string | null
+          certifications: string[]
           created_at: string
+          date_of_birth: string | null
           experience_years: number
+          gender: string | null
           id: string
           id_document_url: string | null
           is_available: boolean
+          languages: string[]
+          license_number: string | null
+          licensing_body: string | null
+          national_id_number: string | null
+          nationality: string | null
+          previous_employer: string | null
+          previous_position: string | null
+          professional_summary: string | null
+          qualifications: string | null
           rating: number
+          residential_address: string | null
           service_area: string | null
           service_records_url: string | null
           specialization: string[]
+          state_of_residence: string | null
+          submitted_at: string | null
           total_cases: number
           updated_at: string
           user_id: string
@@ -663,15 +679,31 @@ export type Database = {
         }
         Insert: {
           admin_notes?: string | null
+          applied_for_role?: string | null
+          certifications?: string[]
           created_at?: string
+          date_of_birth?: string | null
           experience_years?: number
+          gender?: string | null
           id?: string
           id_document_url?: string | null
           is_available?: boolean
+          languages?: string[]
+          license_number?: string | null
+          licensing_body?: string | null
+          national_id_number?: string | null
+          nationality?: string | null
+          previous_employer?: string | null
+          previous_position?: string | null
+          professional_summary?: string | null
+          qualifications?: string | null
           rating?: number
+          residential_address?: string | null
           service_area?: string | null
           service_records_url?: string | null
           specialization?: string[]
+          state_of_residence?: string | null
+          submitted_at?: string | null
           total_cases?: number
           updated_at?: string
           user_id: string
@@ -679,15 +711,31 @@ export type Database = {
         }
         Update: {
           admin_notes?: string | null
+          applied_for_role?: string | null
+          certifications?: string[]
           created_at?: string
+          date_of_birth?: string | null
           experience_years?: number
+          gender?: string | null
           id?: string
           id_document_url?: string | null
           is_available?: boolean
+          languages?: string[]
+          license_number?: string | null
+          licensing_body?: string | null
+          national_id_number?: string | null
+          nationality?: string | null
+          previous_employer?: string | null
+          previous_position?: string | null
+          professional_summary?: string | null
+          qualifications?: string | null
           rating?: number
+          residential_address?: string | null
           service_area?: string | null
           service_records_url?: string | null
           specialization?: string[]
+          state_of_residence?: string | null
+          submitted_at?: string | null
           total_cases?: number
           updated_at?: string
           user_id?: string
@@ -698,6 +746,60 @@ export type Database = {
             foreignKeyName: "investigators_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      kyc_documents: {
+        Row: {
+          created_at: string
+          document_type: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          file_type: string | null
+          id: string
+          investigator_id: string
+          label: string | null
+          uploaded_by: string
+        }
+        Insert: {
+          created_at?: string
+          document_type: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          file_type?: string | null
+          id?: string
+          investigator_id: string
+          label?: string | null
+          uploaded_by: string
+        }
+        Update: {
+          created_at?: string
+          document_type?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          file_type?: string | null
+          id?: string
+          investigator_id?: string
+          label?: string | null
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kyc_documents_investigator_id_fkey"
+            columns: ["investigator_id"]
+            isOneToOne: false
+            referencedRelation: "investigators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kyc_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["user_id"]
           },
@@ -1512,6 +1614,30 @@ export type Database = {
           user_id: string
         }[]
       }
+      admin_kyc_application: {
+        Args: { p_investigator_id: string }
+        Returns: Json
+      }
+      admin_kyc_queue: {
+        Args: { p_status?: string }
+        Returns: {
+          applied_for_role: string
+          document_count: number
+          email: string
+          full_name: string
+          guarantor_count: number
+          has_id: boolean
+          has_summary: boolean
+          investigator_id: string
+          is_complete: boolean
+          phone: string
+          requested_role: string
+          submitted_at: string
+          user_id: string
+          verification_status: string
+          waiting_days: number
+        }[]
+      }
       admin_monthly_trends: {
         Args: { p_months?: number }
         Returns: {
@@ -1641,6 +1767,7 @@ export type Database = {
       request_account_deletion: { Args: { p_reason?: string }; Returns: string }
       shares_context_with: { Args: { p_user_id: string }; Returns: boolean }
       storage_uuid_prefix: { Args: { p_name: string }; Returns: string }
+      submit_kyc_for_review: { Args: never; Returns: undefined }
       tsw_elevate: { Args: never; Returns: undefined }
       tsw_is_elevated: { Args: never; Returns: boolean }
       update_case_status: {

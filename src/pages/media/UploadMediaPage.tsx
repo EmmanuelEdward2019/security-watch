@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMediaStore } from '@/stores/mediaStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useKycGate } from '@/hooks/useKycGate';
 import {
   Button,
   Input,
@@ -37,6 +38,7 @@ type FormData = z.infer<typeof schema>;
 export function UploadMediaPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { requireKyc } = useKycGate();
   const { institutions, createMediaReport, fetchInstitutions } = useMediaStore();
 
   const [file, setFile] = useState<{ id: string; file: File; preview?: string; size: number } | null>(null);
@@ -84,6 +86,10 @@ export function UploadMediaPage() {
       toast.error('Please upload a file');
       return;
     }
+
+    // Hard gate: this role handles other people's data or takes money,
+    // so it must be verified first. Returns false and shows the prompt.
+    if (!requireKyc('upload_media')) return;
 
     setIsSubmitting(true);
 

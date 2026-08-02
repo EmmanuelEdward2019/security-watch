@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { usePropertyStore } from '@/stores/propertyStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useKycGate } from '@/hooks/useKycGate';
 import {
   Button,
   Input,
@@ -70,6 +71,7 @@ type Step2Data = z.infer<typeof step2Schema>;
 export function CreatePropertyPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { requireKyc } = useKycGate();
   const { createProperty, addDocument } = usePropertyStore();
 
   const [step, setStep] = useState(0);
@@ -137,6 +139,10 @@ export function CreatePropertyPage() {
 
     const basic = step1Form.getValues();
     const details = step2Form.getValues();
+
+    // Hard gate: this role handles other people's data or takes money,
+    // so it must be verified first. Returns false and shows the prompt.
+    if (!requireKyc('list_property')) return;
 
     setIsSubmitting(true);
 

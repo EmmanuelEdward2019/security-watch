@@ -257,6 +257,23 @@ client.
 RLS is enabled on every one. The rules below are what the database enforces; your
 UI should mirror them so users never see an action they cannot complete.
 
+> **The column blocks in this section are illustrative, not exhaustive.**
+> They name the columns you will actually work with and omit routine
+> housekeeping — most tables carry `created_at`, and many carry `updated_at`,
+> whether or not the block below lists them.
+>
+> **`src/types/database.types.ts` is authoritative** (§0.1). It is generated from
+> the live schema, so it cannot drift from reality the way prose does. Type your
+> client with it and let the compiler settle any disagreement with this document.
+>
+> Known abridgements, for the avoidance of doubt: `blog_posts` also has
+> `author_id`, `created_at`, `updated_at`; `media_reports` also has `created_at`,
+> `updated_at`; `account_deletion_requests` has **two** distinct timestamps,
+> `requested_at` (when the user asked) and `created_at` (row insert);
+> `property_verification_requests`, `contact_messages` and
+> `security_service_requests` each also have `updated_at`. Conversely
+> `property_documents` and `property_requests` have **no** `updated_at` at all.
+
 ### 4.1 `profiles`
 
 ```
@@ -655,7 +672,9 @@ export async function uploadEvidence(
   asset: { uri: string; name: string; mimeType: string }
 ) {
   // Read once. These exact bytes are both hashed and uploaded.
-  const bytes = new File(asset.uri).bytes();      // Uint8Array, no base64 anywhere
+  // `bytes()` is async — without the await you hash a Promise and
+  // `bytes.byteLength` is undefined.
+  const bytes = await new File(asset.uri).bytes();   // Uint8Array, no base64
   const hash = await sha256Hex(bytes);
 
   const path = buildObjectPath(caseId, asset.name);

@@ -207,6 +207,7 @@ const roleNavSections: Record<UserRole, NavSection[]> = {
         { to: '/app/admin/users', label: 'Users', icon: Users },
         { to: '/app/admin/cases', label: 'Cases', icon: Briefcase },
         { to: '/app/admin/verifications', label: 'Verifications', icon: CheckCircle2 },
+        { to: '/app/admin/kyc', label: 'KYC Review', icon: ShieldCheck },
       ],
     },
     {

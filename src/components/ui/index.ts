@@ -42,3 +42,6 @@ export type { StatsCardProps } from './StatsCard';
 
 export { TextArea } from './TextArea';
 export type { TextAreaProps } from './TextArea';
+
+export { LocationPicker } from './LocationPicker';
+export type { LocationPickerProps, LocationValue } from './LocationPicker';
