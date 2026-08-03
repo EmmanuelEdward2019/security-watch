@@ -1226,8 +1226,10 @@ export type Database = {
           id: string
           images: string[]
           is_active: boolean
+          latitude: number | null
           listing_type: string
           location: string
+          longitude: number | null
           owner_id: string
           price: number
           property_type: string
@@ -1247,8 +1249,10 @@ export type Database = {
           id?: string
           images?: string[]
           is_active?: boolean
+          latitude?: number | null
           listing_type: string
           location: string
+          longitude?: number | null
           owner_id: string
           price: number
           property_type: string
@@ -1268,8 +1272,10 @@ export type Database = {
           id?: string
           images?: string[]
           is_active?: boolean
+          latitude?: number | null
           listing_type?: string
           location?: string
+          longitude?: number | null
           owner_id?: string
           price?: number
           property_type?: string
@@ -1764,6 +1770,34 @@ export type Database = {
         }[]
       }
       owns_property: { Args: { p_property_id: string }; Returns: boolean }
+      properties_nearby: {
+        Args: {
+          p_latitude: number
+          p_limit?: number
+          p_longitude: number
+          p_radius_km?: number
+        }
+        Returns: {
+          address: string
+          area_sqm: number
+          bathrooms: number
+          bedrooms: number
+          created_at: string
+          currency: string
+          description: string
+          distance_km: number
+          id: string
+          images: string[]
+          latitude: number
+          listing_type: string
+          location: string
+          longitude: number
+          price: number
+          property_type: string
+          status: string
+          title: string
+        }[]
+      }
       request_account_deletion: { Args: { p_reason?: string }; Returns: string }
       shares_context_with: { Args: { p_user_id: string }; Returns: boolean }
       storage_uuid_prefix: { Args: { p_name: string }; Returns: string }

@@ -404,8 +404,27 @@ tell users their messages are encrypted.
 
 ```
 properties  id · owner_id · title · description · property_type · price numeric
-            currency · location · address · bedrooms · bathrooms · area_sqm
+            currency · location · address · latitude numeric · longitude numeric
+            bedrooms · bathrooms · area_sqm
             status · listing_type · is_active · images text[] · features text[]
+            created_at · updated_at
+```
+
+`latitude` / `longitude` were added in migration 015 — the table originally had
+only the two text fields, so a device fix captured while creating a listing had
+nowhere to go and was discarded. Store both: the resolved address in `address`,
+the locality in `location`, and the raw fix in the coordinate columns. Nullable,
+because geocoding fails for many rural Nigerian addresses and a listing is still
+valid without one.
+
+For map and proximity search use the RPC rather than pulling the table and
+computing distance on the device:
+
+```ts
+const { data } = await supabase.rpc('properties_nearby', {
+  p_latitude: 6.5244, p_longitude: 3.3792, p_radius_km: 25, p_limit: 50,
+});
+// → listing columns + distance_km, nearest first. Callable by anon.
 ```
 
 `property_type`: `apartment | house | land | commercial | office`
