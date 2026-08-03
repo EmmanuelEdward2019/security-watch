@@ -23,6 +23,72 @@ through migration files — never through the dashboard SQL editor.
 
 ---
 
+## Deploying — and why it goes through CI
+
+**Do not make the repository public to unblock a deployment.**
+
+Vercel's Git integration verifies, on a private repository, that the commit
+author has contributing access to the Vercel project. When it does not, the
+build is refused:
+
+> The deployment was blocked because the commit author did not have
+> contributing access to the project on Vercel.
+
+This repository has commits from two author emails —
+`emmanueledward2016@gmail.com` (11) and `techfieldstechnologies@gmail.com` (20)
+— and only the first is tied to the Vercel account `emmanueledward2016-8251`.
+Making the repository public skips the check, which is why that appeared to fix
+it. It is not a fix. This codebase contains the complete RLS design, every guard
+trigger and all admin logic for a platform holding criminal case material.
+
+`.github/workflows/deploy.yml` deploys through the Vercel CLI instead. A CLI
+deploy authenticates with a scoped token, so there is no commit author in the
+auth path and the check does not apply — whoever authors the commit, and with
+the repository private.
+
+### One-time setup
+
+1. **Create a Vercel token** — Vercel → Account Settings → Tokens. Scope it to
+   the `emmanueledward2016-8251` team, not to your whole account.
+
+2. **Add three GitHub secrets** — repo → Settings → Secrets and variables →
+   Actions:
+
+   | Secret | Value |
+   |---|---|
+   | `VERCEL_TOKEN` | the token from step 1 |
+   | `VERCEL_ORG_ID` | `team_1UIil7XDtSbH5Px7VUTtD3SR` |
+   | `VERCEL_PROJECT_ID` | `prj_zxJBrQhmYFLPVgGAX9pNKTlXgLUd` |
+
+   The two IDs are not secret — they are in `.vercel/project.json` — but the
+   workflow reads them as secrets so a fork cannot target your project.
+
+3. **Turn off the Vercel Git integration's auto-deploy** — Vercel → Project →
+   Settings → Git → disconnect, or set Ignored Build Step to `exit 0`.
+   Otherwise every push deploys twice: once (blocked) by the integration and
+   once by CI.
+
+Production then deploys only after typecheck, lint, build, dependency audit and
+the migration sanity checks have all passed — which the Git integration could
+never enforce. `workflow_dispatch` gives you a manual preview or production
+deploy from the Actions tab.
+
+### Optional: fix the underlying mismatch too
+
+Independently worth doing, so the two identities stop diverging:
+
+- On **GitHub**, add both addresses as verified emails on `EmmanuelEdward2019`,
+  so commits from either are attributed to that account.
+- Check your **global** git identity. It is currently
+  `shop4me.market@gmail.com` — a different project. Any repository without a
+  local override will author commits as that address and hit the same wall:
+
+  ```bash
+  git config --global user.email "emmanueledward2016@gmail.com"
+  ```
+
+---
+
 ## 0. Preflight — read-only
 
 Run [`supabase/scripts/preflight.sql`](supabase/scripts/preflight.sql) in the SQL

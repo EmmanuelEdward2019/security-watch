@@ -1,0 +1,124 @@
+name: Deploy
+
+# Deploys through the Vercel CLI rather than Vercel's Git integration.
+#
+# Why: on a PRIVATE repository the Git integration verifies that the commit
+# author has contributing access to the Vercel project, and blocks the build
+# otherwise —
+#
+#   "The deployment was blocked because the commit author did not have
+#    contributing access to the project on Vercel."
+#
+# This repository has commits from two author emails, only one of which is tied
+# to the Vercel account. Making the repository public sidesteps the check, but
+# that is not an acceptable trade for a codebase carrying the RLS design and
+# admin logic of a platform holding criminal case data.
+#
+# A CLI deploy authenticates with a scoped token. There is no commit author in
+# that path, so the check does not apply and the repository stays private
+# whoever authors the commit.
+#
+# It also buys something the Git integration cannot: production only ever
+# deploys after typecheck, lint, build, dependency audit and the migration
+# sanity checks have all passed.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [preview, production]
+        default: preview
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false # never cancel a half-finished production deploy
+
+jobs:
+  # Reuses the existing verification workflow rather than duplicating it.
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to Vercel
+    needs: verify
+    runs-on: ubuntu-latest
+
+    # Attach this to a protected GitHub environment if you want a manual
+    # approval gate before production.
+    environment:
+      name: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || 'production' }}
+      url: ${{ steps.deploy.outputs.url }}
+
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      # Pulls the project's env vars from Vercel, so secrets never live in
+      # GitHub — only the deploy token does.
+      - name: Pull Vercel environment
+        run: |
+          TARGET="${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || 'production' }}"
+          vercel pull --yes --environment="$TARGET" --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Build
+        run: |
+          if [ "${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || 'production' }}" = "production" ]; then
+            vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+          else
+            vercel build --token="${{ secrets.VERCEL_TOKEN }}"
+          fi
+
+      # --prebuilt uploads the artefact produced above rather than rebuilding on
+      # Vercel, so what CI verified is exactly what ships.
+      - name: Deploy
+        id: deploy
+        run: |
+          TARGET="${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || 'production' }}"
+          if [ "$TARGET" = "production" ]; then
+            URL=$(vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}")
+          else
+            URL=$(vercel deploy --prebuilt --token="${{ secrets.VERCEL_TOKEN }}")
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $URL"
+
+      - name: Smoke check
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 4 --retry-all-errors "$URL")
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Deployment answered HTTP $CODE, expected 200"
+            exit 1
+          fi
+          echo "Smoke check passed: HTTP 200"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deployment"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Target | ${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || 'production' }} |"
+            echo "| URL | ${{ steps.deploy.outputs.url }} |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Author | ${{ github.event.head_commit.author.email || github.actor }} |"
+            echo ""
+            echo "Deployed via CLI token — the commit author is not part of the auth path."
+          } >> "$GITHUB_STEP_SUMMARY"

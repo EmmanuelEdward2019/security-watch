@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets deploy.yml reuse this instead of duplicating the checks, so production
+  # can only ship what has already passed verification.
+  workflow_call:
 
 # A superseded run on the same branch is wasted compute.
 concurrency:
