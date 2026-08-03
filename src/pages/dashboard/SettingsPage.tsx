@@ -18,6 +18,7 @@ import { Card, CardHeader, CardContent, Button, Input, Modal } from '@/component
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+import { checkPassword, PASSWORD_MIN_LENGTH } from '@/lib/password';
 
 // ── Theme helpers ──────────────────────────────────────────────────────────
 type Theme = 'light' | 'dark' | 'system';
@@ -119,7 +120,12 @@ export function SettingsPage() {
 
   // ── Password ──────────────────────────────────────────────────────────
   const handleChangePassword = async () => {
-    if (newPassword.length < 8) {
+    const strength = checkPassword(newPassword);
+    if (!strength.acceptable) {
+      toast.error(strength.issues[0]);
+      return;
+    }
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
       toast.error('Password must be at least 8 characters');
       return;
     }

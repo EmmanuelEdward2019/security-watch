@@ -22,6 +22,8 @@ import {
 import { Button, Input } from '@/components/ui';
 import { Card } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
+import { passwordSchema, checkPassword } from '@/lib/password';
+import { cn } from '@/utils/cn';
 import { USER_ROLE_LABELS, type UserRole } from '@/types';
 import toast from 'react-hot-toast';
 
@@ -40,7 +42,9 @@ const roleIcons: Record<UserRole, React.ComponentType<{ size?: number; className
 const step2Schema = z
   .object({
     email: z.string().email('Invalid email address'),
-    password: z.string().min(6, 'Password must be at least 6 characters'),
+    // Supabase's project minimum is 6 with no complexity rule, which accepted
+    // '123456'. See lib/password.ts — the dashboard setting still needs raising.
+    password: passwordSchema,
     confirmPassword: z.string(),
     fullName: z.string().min(2, 'Full name is required'),
     phone: z.string().optional(),
@@ -105,6 +109,9 @@ export function RegisterPage() {
     toast.success('Account created! Check your email for your 6-digit verification code.');
     navigate(`/verify-otp?email=${encodeURIComponent(step2Data.email)}&mode=signup`);
   };
+
+  const passwordValue = step2Form.watch('password') ?? '';
+  const passwordStrength = checkPassword(passwordValue, step2Form.watch('email'));
 
   const roles = (Object.entries(USER_ROLE_LABELS) as [UserRole, string][]).filter(
     ([role]) => role !== 'admin'
@@ -259,14 +266,66 @@ export function RegisterPage() {
                   error={step2Form.formState.errors.email?.message}
                   {...step2Form.register('email')}
                 />
-                <Input
-                  label="Password"
-                  type="password"
-                  icon={Lock}
-                  placeholder="••••••••"
-                  error={step2Form.formState.errors.password?.message}
-                  {...step2Form.register('password')}
-                />
+                <div>
+                  <Input
+                    label="Password"
+                    type="password"
+                    icon={Lock}
+                    placeholder="At least 10 characters"
+                    error={step2Form.formState.errors.password?.message}
+                    {...step2Form.register('password')}
+                  />
+
+                  {/*
+                    Live strength feedback. The project-level Supabase policy
+                    accepts 6 characters with no complexity rule, so this is
+                    where most users actually get steered toward something
+                    survivable. Shows what is still missing rather than just
+                    refusing on submit.
+                  */}
+                  {passwordValue.length > 0 && (
+                    <div className="mt-2" aria-live="polite">
+                      <div className="flex gap-1" role="presentation">
+                        {[0, 1, 2, 3].map((i) => (
+                          <span
+                            key={i}
+                            className={cn(
+                              'h-1 flex-1 rounded-full transition-colors',
+                              i < passwordStrength.score
+                                ? passwordStrength.score <= 1
+                                  ? 'bg-accent-500'
+                                  : passwordStrength.score === 2
+                                    ? 'bg-amber-500'
+                                    : 'bg-brand-500'
+                                : 'bg-surface-200'
+                            )}
+                          />
+                        ))}
+                      </div>
+                      <p
+                        className={cn(
+                          'mt-1 text-xs font-medium',
+                          passwordStrength.score <= 1
+                            ? 'text-accent-600'
+                            : passwordStrength.score === 2
+                              ? 'text-amber-600'
+                              : 'text-brand-600'
+                        )}
+                      >
+                        {passwordStrength.label}
+                      </p>
+                      {passwordStrength.issues.length > 0 && (
+                        <ul className="mt-1 space-y-0.5">
+                          {passwordStrength.issues.slice(0, 3).map((issue) => (
+                            <li key={issue} className="text-xs text-surface-500">
+                              · {issue}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <Input
                   label="Confirm password"
                   type="password"

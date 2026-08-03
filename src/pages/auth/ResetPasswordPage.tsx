@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { checkPassword, PASSWORD_MIN_LENGTH } from '@/lib/password';
 import { Lock, Eye, EyeOff, ArrowRight, CheckCircle, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
@@ -39,7 +40,13 @@ export default function ResetPasswordPage() {
   const strength = getStrength(password);
 
   const handleReset = async () => {
-    if (password.length < 8) {
+    // Full policy, not just a length check — see lib/password.ts.
+    const strength = checkPassword(password);
+    if (!strength.acceptable) {
+      toast.error(strength.issues[0]);
+      return;
+    }
+    if (password.length < PASSWORD_MIN_LENGTH) {
       toast.error('Password must be at least 8 characters');
       return;
     }
@@ -242,7 +249,7 @@ export default function ResetPasswordPage() {
                     !password ||
                     !confirmPassword ||
                     password !== confirmPassword ||
-                    password.length < 8
+                    password.length < PASSWORD_MIN_LENGTH
                   }
                   icon={Lock}
                 >
