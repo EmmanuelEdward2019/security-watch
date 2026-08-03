@@ -25,15 +25,74 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
-  // Verify the user has an active session (set by OTP verify step)
+  /**
+   * Establish that we have a recovery session before offering the form.
+   *
+   * Two routes arrive here and they differ in timing:
+   *
+   *   Web    — /verify-otp calls verifyOtp and navigates here afterwards, so a
+   *            session already exists by the time this mounts.
+   *   Mobile — the emailed link hits Supabase's /auth/v1/verify, which redirects
+   *            here with the session in the URL fragment. The client parses that
+   *            asynchronously via detectSessionInUrl.
+   *
+   * A bare getSession() on mount serves the first case and races the second: it
+   * can resolve null while the fragment is still being parsed, and told users
+   * with a perfectly valid token that their session had expired.
+   *
+   * So we listen as well as ask, and only give up once the client has had a
+   * chance to finish.
+   */
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setHasSession(!!session);
+    let settled = false;
+    let timer: number | undefined;
+
+    const accept = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      setHasSession(true);
       setCheckingSession(false);
-      if (!session) {
-        toast.error('Session expired. Please start the password reset process again.');
+    };
+
+    // Fires when the recovery token in the URL is exchanged for a session.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+        accept();
       }
     });
+
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        accept();
+        return;
+      }
+
+      // No session yet. If the URL carries recovery material, give the client
+      // time to process it before declaring failure.
+      const url = `${window.location.hash}${window.location.search}`;
+      const looksLikeRecovery = /access_token=|token_hash=|type=recovery|code=/.test(url);
+
+      timer = window.setTimeout(
+        () => {
+          if (settled) return;
+          settled = true;
+          setHasSession(false);
+          setCheckingSession(false);
+          toast.error(
+            looksLikeRecovery
+              ? 'That reset link could not be verified. It may have expired — request a new one.'
+              : 'Session expired. Please start the password reset process again.'
+          );
+        },
+        looksLikeRecovery ? 3000 : 0
+      );
+    });
+
+    return () => {
+      sub.subscription.unsubscribe();
+      window.clearTimeout(timer);
+    };
   }, []);
 
   // Password strength helpers
@@ -47,7 +106,7 @@ export default function ResetPasswordPage() {
       return;
     }
     if (password.length < PASSWORD_MIN_LENGTH) {
-      toast.error('Password must be at least 8 characters');
+      toast.error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
       return;
     }
     if (password !== confirmPassword) {
@@ -83,8 +142,8 @@ export default function ResetPasswordPage() {
           </div>
           <h2 className="text-3xl font-bold text-white mb-4">Set a new password</h2>
           <p className="text-forest-100 max-w-sm">
-            Choose a strong, unique password you haven't used before. At least 8 characters, mix
-            of letters, numbers and symbols recommended.
+            Choose a strong, unique password you haven't used before — at least{' '}
+            {PASSWORD_MIN_LENGTH} characters, with upper and lower case, a number and a symbol.
           </p>
         </div>
         <p className="text-forest-200 text-sm">© The Security Watch. Built for everyday people.</p>

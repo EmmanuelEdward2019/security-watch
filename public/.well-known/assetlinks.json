@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.thesecuritywatch.app",
+      "sha256_cert_fingerprints": [
+        "90:5F:EB:B2:F6:D8:17:33:0C:95:D8:72:F2:69:FC:43:C7:98:CB:BA:28:AF:36:2C:0D:87:9C:25:86:6E:B4:E1"
+      ]
+    }
+  }
+]
