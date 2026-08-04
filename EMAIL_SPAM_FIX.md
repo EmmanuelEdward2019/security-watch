@@ -1,5 +1,16 @@
 # Fixing Authentication Emails Going to Spam
 
+> **Note on credentials.** This document previously contained a live Resend API
+> key in plaintext. It was committed on 22 April 2026, pushed to GitHub, detected
+> by secret scanning, and revoked by Resend.
+>
+> Never paste a live credential into a document, even a private one. Secret
+> scanning covers private repositories too, and anyone with read access — or any
+> tool with repository access — sees it. Credentials belong in `.env` (gitignored)
+> and in Supabase Edge Function secrets, and nowhere else.
+
+---
+
 Auth emails (sign-up confirmation, password reset) are sent by **Supabase's default
 SMTP relay** (`smtp.supabase.io`). That relay is shared across thousands of projects
 and has a weak sender reputation — which is exactly why your emails land in spam.
@@ -41,7 +52,7 @@ your own verified domain. Resend already has a working API key in your project.
    | Port | `465` |
    | Minimum interval | `60` (seconds between sends per user) |
    | Username | `resend` (literally the string "resend") |
-   | Password | `***REDACTED-ROTATED-RESEND-KEY***` ← your Resend API key |
+   | Password | `<RESEND_API_KEY>` ← your Resend API key |
 4. Click **Save**.
 5. Send a **test email** from the same settings page to confirm delivery.
 
@@ -61,7 +72,7 @@ In **Supabase Dashboard → Authentication → URL Configuration**, make sure th
 
 ## Step 4 — Update your Resend API key scope (security)
 
-Your current Resend API key (`re_REDACTED_...`) has full access. Create a scoped key:
+Your current Resend API key (`<RESEND_API_KEY>.`) has full access. Create a scoped key:
 1. Resend Dashboard → **API Keys → Create API Key**.
 2. Set permission to **"Sending access"** only, scoped to your verified domain.
 3. Update `RESEND_API_KEY` in your `.env` (and in Supabase Auth SMTP settings above)

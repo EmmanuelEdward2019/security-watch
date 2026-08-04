@@ -66,6 +66,51 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+
+    # A live Resend key sat in EMAIL_SPAM_FIX.md from 22 April until 4 August,
+    # in every commit, until GitHub's scanning caught it and Resend revoked it.
+    # A hand-written audit missed it because the regex used [A-Za-z0-9] and the
+    # key contains an underscore. This job exists so that detection never again
+    # depends on someone writing the right character class by hand.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks needs full history, not just the tip
+
+      # Non-blocking: gitleaks-action needs a licence key for organisation-owned
+      # repositories, and a licensing change must not be able to stop a security
+      # fix from shipping. The explicit check below is the one that gates.
+      - name: Scan working tree and full history
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Belt and braces: an explicit check for the credential shapes this
+      # project actually uses, in case a gitleaks rule ever stops matching.
+      - name: Project-specific credential patterns
+        run: |
+          # Deliberately permissive character classes — the previous miss was
+          # caused by omitting _ and - from them.
+          # Resend keys are re_<8 alphanumerics>_<24+ alphanumerics>. Matching
+          # the underscore position precisely avoids firing on filenames like
+          # 011_restore_policy_predicate_grants.sql, while still catching the
+          # real thing — which is exactly what the previous hand-written scan
+          # got wrong in the other direction.
+          PATTERN='re_[A-Za-z0-9]{8}_[A-Za-z0-9]{20,}|sb_secret_[A-Za-z0-9_-]{10,}|sbp_[A-Za-z0-9_-]{20,}|sk_live_[A-Za-z0-9]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+
+          # Exclude the documented placeholders, which are intentional.
+          if git grep -nIE "$PATTERN" -- . \
+               ':!*.lock' ':!package-lock.json' \
+             | grep -vE 're_xxx|sk_live_xxx|sk_test_xxx|<RESEND_API_KEY>|your-.*-key'; then
+            echo "::error::A credential-shaped string is committed. Redact it, rotate the key, and purge it from history."
+            exit 1
+          fi
+          echo "No credential-shaped strings found."
+
   sql-sanity:
     name: Migration sanity
     runs-on: ubuntu-latest
