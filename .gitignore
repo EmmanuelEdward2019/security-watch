@@ -33,3 +33,8 @@ dist-ssr
 
 # Database backups — contain personal data (emails, names). Never commit.
 backups/
+
+# Hand-off briefs for the React Native repo. Kept local: they describe
+# backend internals in one place and do not belong in a pushed artefact.
+RN_PARITY_PROMPT.md
+MOBILE_API*.md
