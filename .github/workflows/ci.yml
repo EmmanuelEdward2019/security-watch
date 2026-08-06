@@ -91,25 +91,39 @@ jobs:
 
       # Belt and braces: an explicit check for the credential shapes this
       # project actually uses, in case a gitleaks rule ever stops matching.
+      #
+      # This scans EVERY commit, not just the checked-out tree. The tree-only
+      # version missed the second Resend flag completely: the key had been
+      # redacted at HEAD, so `git grep` on the checkout came back clean while
+      # fifteen historical commits still carried it. GitHub scans what you
+      # push, not what your tip happens to look like.
       - name: Project-specific credential patterns
         run: |
-          # Deliberately permissive character classes — the previous miss was
+          # Deliberately permissive character classes — the original miss was
           # caused by omitting _ and - from them.
-          # Resend keys are re_<8 alphanumerics>_<24+ alphanumerics>. Matching
+          # Resend keys are re_<8 alphanumerics>_<20+ alphanumerics>. Matching
           # the underscore position precisely avoids firing on filenames like
           # 011_restore_policy_predicate_grants.sql, while still catching the
-          # real thing — which is exactly what the previous hand-written scan
-          # got wrong in the other direction.
-          PATTERN='re_[A-Za-z0-9]{8}_[A-Za-z0-9]{20,}|sb_secret_[A-Za-z0-9_-]{10,}|sbp_[A-Za-z0-9_-]{20,}|sk_live_[A-Za-z0-9]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+          # real thing — which is exactly what the first hand-written scan got
+          # wrong in the other direction.
+          PATTERN='re_[A-Za-z0-9]{8}_[A-Za-z0-9]{20,}|sb_secret_[A-Za-z0-9_-]{10,}|sbp_[A-Za-z0-9_-]{20,}|sk_live_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'
 
-          # Exclude the documented placeholders, which are intentional.
-          if git grep -nIE "$PATTERN" -- . \
-               ':!*.lock' ':!package-lock.json' \
-             | grep -vE 're_xxx|sk_live_xxx|sk_test_xxx|<RESEND_API_KEY>|your-.*-key'; then
-            echo "::error::A credential-shaped string is committed. Redact it, rotate the key, and purge it from history."
+          # Documented placeholders, which are intentional and must not fail CI.
+          IGNORE='re_xxx|sk_live_xxx|sk_test_xxx|whsec_xxx|<RESEND_API_KEY>|your-.*-key|REDACTED|YOUR_PROJECT_REF'
+
+          # package-lock is excluded because npm integrity hashes are base64 and
+          # collide with the JWT shape.
+          if git grep -lIE "$PATTERN" $(git rev-list --all) -- \
+               ':!*.lock' ':!package-lock.json' 2>/dev/null \
+             | grep -vE "$IGNORE" | head -20 | grep .; then
+            echo "::error::A credential-shaped string exists somewhere in this repository's history."
+            echo "Redacting it at HEAD is not enough - GitHub scans every pushed commit."
+            echo "Rotate the credential, then purge it with:"
+            echo "  git filter-repo --replace-text <(echo 'THEKEY==>***REDACTED***')"
+            echo "and force-push. See SECURITY.md."
             exit 1
           fi
-          echo "No credential-shaped strings found."
+          echo "No credential-shaped strings in any commit."
 
   sql-sanity:
     name: Migration sanity
