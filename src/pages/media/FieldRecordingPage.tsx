@@ -35,6 +35,13 @@ import toast from 'react-hot-toast';
 
 type CaptureMode = 'video' | 'audio' | 'photo';
 
+interface Capture {
+  blob: Blob;
+  url: string;
+  name: string;
+  type: string;
+}
+
 interface Coordinates {
   latitude: number;
   longitude: number;
@@ -63,12 +70,13 @@ export default function FieldRecordingPage() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
   const [mode, setMode] = useState<CaptureMode>('video');
   const [permissionState, setPermissionState] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle');
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [captured, setCaptured] = useState<{ blob: Blob; url: string; name: string; type: string } | null>(null);
+  const [captured, setCaptured] = useState<Capture | null>(null);
 
   const [coords, setCoords] = useState<Coordinates | null>(null);
   const [locating, setLocating] = useState(false);
@@ -99,11 +107,31 @@ export default function FieldRecordingPage() {
     };
   }, [stopStream]);
 
+  /**
+   * Blob URLs are revoked through a ref, never from an effect keyed on the URL.
+   *
+   * The previous version used `useEffect(() => () => revoke(url), [url])`. Under
+   * StrictMode React invokes the cleanup immediately after the first run, so the
+   * URL was revoked the instant it was assigned and the preview element loaded a
+   * dead source. The recording itself was fine — only the playback was broken,
+   * which is why audio looked completely non-functional while video still showed
+   * the live camera feed behind it.
+   */
+  const replacePreview = useCallback((next: Capture | null) => {
+    if (previewUrlRef.current && previewUrlRef.current !== next?.url) {
+      URL.revokeObjectURL(previewUrlRef.current);
+    }
+    previewUrlRef.current = next?.url ?? null;
+    setCaptured(next);
+  }, []);
+
+  // Release the last preview only when the screen goes away.
   useEffect(() => {
     return () => {
-      if (captured?.url) URL.revokeObjectURL(captured.url);
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
     };
-  }, [captured?.url]);
+  }, []);
 
   const requestDevices = async (nextMode: CaptureMode) => {
     stopStream();
@@ -203,7 +231,7 @@ export default function FieldRecordingPage() {
         const extension = type.includes('mp4') ? 'mp4' : 'webm';
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 
-        setCaptured({
+        replacePreview({
           blob,
           url: URL.createObjectURL(blob),
           name: `field-${mode}-${stamp}.${extension}`,
@@ -259,7 +287,7 @@ export default function FieldRecordingPage() {
           return;
         }
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        setCaptured({
+        replacePreview({
           blob,
           url: URL.createObjectURL(blob),
           name: `field-photo-${stamp}.jpg`,
@@ -275,8 +303,7 @@ export default function FieldRecordingPage() {
   };
 
   const discard = () => {
-    if (captured?.url) URL.revokeObjectURL(captured.url);
-    setCaptured(null);
+    replacePreview(null);
     setCapturedAt(null);
     setElapsed(0);
   };

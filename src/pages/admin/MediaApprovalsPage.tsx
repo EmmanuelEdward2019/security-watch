@@ -10,6 +10,7 @@ import {
   TextArea,
 } from '@/components/ui';
 import { useMediaStore } from '@/stores/mediaStore';
+import { STORAGE_BUCKETS, resolveStorageUrl } from '@/lib/supabase';
 import type { MediaReport, MediaStatus } from '@/types';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -21,6 +22,37 @@ export function MediaApprovalsPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [processing, setProcessing] = useState(false);
+
+  /**
+   * `file_url` holds a storage *path* inside the private `media-reports` bucket,
+   * not a URL. Feeding it straight to <video src> resolved it against the app
+   * origin and 404'd, so nothing filed from the field was actually viewable —
+   * an approval queue where the reviewer cannot see the evidence is worse than
+   * no queue at all. Sign it on open instead, and let it expire with the modal.
+   */
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState(false);
+
+  useEffect(() => {
+    if (!selected?.file_url) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    let active = true;
+    setPreviewUrl(null);
+    setPreviewError(false);
+
+    void resolveStorageUrl(STORAGE_BUCKETS.MEDIA_REPORTS, selected.file_url).then((url) => {
+      if (!active) return;
+      if (url) setPreviewUrl(url);
+      else setPreviewError(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [selected?.file_url]);
 
   useEffect(() => {
     fetchMediaReports({ status: 'pending_review' });
@@ -145,28 +177,38 @@ export function MediaApprovalsPage() {
           <div className="space-y-4">
             <div>
               <p className="text-sm text-surface-500 mb-1">Preview</p>
-              {selected.media_type === 'video' ? (
+              {previewError ? (
+                <p className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  This file could not be loaded from storage. It may have been removed, or the
+                  path recorded on the report may not match the uploaded object.
+                </p>
+              ) : !previewUrl ? (
+                <div className="flex items-center gap-2 rounded-lg bg-surface-100 p-4 text-sm text-surface-500">
+                  <span className="h-4 w-4 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+                  Loading media…
+                </div>
+              ) : selected.media_type === 'video' ? (
                 <div className="relative rounded-lg overflow-hidden bg-surface-900 aspect-video">
-                  <video
-                    src={selected.file_url}
-                    controls
-                    className="w-full h-full"
-                  />
+                  <video src={previewUrl} controls playsInline className="w-full h-full" />
+                </div>
+              ) : selected.media_type === 'audio' ? (
+                <div className="rounded-lg bg-surface-100 p-4">
+                  <audio src={previewUrl} controls className="w-full" />
                 </div>
               ) : selected.media_type === 'photo' ? (
                 <img
-                  src={selected.file_url}
+                  src={previewUrl}
                   alt={selected.title}
                   className="rounded-lg max-h-64 object-contain"
                 />
               ) : (
                 <a
-                  href={selected.file_url}
+                  href={previewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-brand-600 hover:underline"
                 >
-                  {selected.file_url}
+                  Open attachment
                 </a>
               )}
             </div>

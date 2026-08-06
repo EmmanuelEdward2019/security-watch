@@ -72,6 +72,18 @@ export default function LoginPage() {
 
     const result = await signIn(data.email, data.password);
     setIsLoading(false);
+
+    // An unconfirmed address is not a failed login — it is an unfinished one.
+    // Send them to enter the code rather than leaving them stuck on an error.
+    if (result.needsVerification) {
+      toast.error(result.error ?? 'Confirm your email address to continue.');
+      navigate(
+        `/verify-otp?email=${encodeURIComponent(result.email ?? data.email)}&mode=signup`,
+        { replace: true }
+      );
+      return;
+    }
+
     if (result.error) {
       toast.error(result.error);
     } else {
@@ -106,7 +118,7 @@ export default function LoginPage() {
     }
     setShowForgot(false);
     setForgotEmail('');
-    toast.success('Check your email for an 8-digit reset code.');
+    toast.success('Check your email for a 6-digit reset code.');
     navigate(`/verify-otp?email=${encodeURIComponent(forgotEmail.trim())}&mode=recovery`);
   };
 
@@ -127,7 +139,7 @@ export default function LoginPage() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl border border-surface-200 p-8 w-full max-w-md"
+            className="bg-white rounded-2xl shadow-2xl border border-surface-200 p-6 sm:p-8 w-full max-w-lg"
           >
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-surface-900">Reset password</h2>
@@ -140,7 +152,7 @@ export default function LoginPage() {
               </button>
             </div>
             <p className="text-surface-600 text-sm mb-6">
-              Enter the email address associated with your account and we'll send you an 8-digit reset code.
+              Enter the email address associated with your account and we'll send you a 6-digit reset code.
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-surface-700 mb-1">Email address</label>

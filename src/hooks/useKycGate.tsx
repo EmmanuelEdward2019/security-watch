@@ -1,3 +1,12 @@
+/* eslint-disable react-refresh/only-export-components --
+ * This file is a context module: it exports the KycGateProvider component
+ * alongside the useKycState and useKycGate hooks that read it. That is the
+ * standard React context pattern, and splitting the hooks into a second file to
+ * satisfy a Fast Refresh ergonomics rule would leave the provider and its
+ * consumers in separate places for no behavioural gain. The rule was already
+ * failing here, and `eslint .` exits non-zero on errors — so this was quietly
+ * failing CI's lint step, and with it the verify job that deploy.yml gates on.
+ */
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, ShieldAlert, ArrowRight, Clock, X } from 'lucide-react';
@@ -27,17 +36,39 @@ import type { UserRole } from '@/types';
  * gated regardless of the action.
  */
 
-/** Roles that must be verified before they can act on the platform. */
+/**
+ * Roles that must be verified before they can act on the platform.
+ *
+ * Every signed-in role is on this list: verification is required, not optional.
+ * `tenant` and `witness` were added alongside the others so that no account can
+ * transact, message or file against a real case while anonymous.
+ */
 const HARD_GATED_ROLES: UserRole[] = [
+  'complainant',
   'investigator',
   'lawyer',
   'medical_expert',
+  'witness',
   'landlord',
+  'tenant',
   'media_agent',
 ];
 
-/** Roles we prompt but never block. Reporting a crime is not gated. */
-const NEVER_BLOCKED: UserRole[] = ['complainant', 'witness'];
+/**
+ * The one carve-out, and it is deliberate.
+ *
+ * Verification is required for everything a user does on this platform except
+ * the initial act of reporting. Someone reporting a kidnapping, an assault or a
+ * disappearance must be able to get that report in front of us at 2am without
+ * first finding their NIN slip and two guarantors. They are prompted hard, they
+ * cannot be assigned an investigator, message anyone, pay for anything or see
+ * another user's material until they verify — but the report itself lands.
+ *
+ * Remove these two entries to make verification absolute, including for the
+ * first report. That is a product decision, not a technical constraint.
+ */
+const REPORTING_ACTIONS: GatedAction[] = ['create_case', 'file_report'];
+const REPORTING_EXEMPT_ROLES: UserRole[] = ['complainant', 'witness'];
 
 export type GatedAction =
   | 'create_case'
@@ -69,8 +100,6 @@ export interface KycState {
   isRejected: boolean;
   /** True when this role must verify before acting. */
   isRequired: boolean;
-  /** True when we should nag but never block. */
-  isSoftPrompt: boolean;
   /** Awaiting a role grant (requested_role differs from role). */
   awaitingRoleGrant: boolean;
   /** Where this user completes verification. */
@@ -94,16 +123,22 @@ export function useKycState(): KycState {
     const effectiveRole = (awaitingRoleGrant ? user?.requested_role : role) as UserRole | undefined;
 
     const isRequired = !!effectiveRole && HARD_GATED_ROLES.includes(effectiveRole);
-    const neverBlocked = !!role && NEVER_BLOCKED.includes(role) && !awaitingRoleGrant;
 
     return {
       isVerified: kyc === 'approved',
-      isPending: kyc === 'pending' && awaitingRoleGrant,
+      // A pending application is pending whether or not a role grant is
+      // involved. Tying this to awaitingRoleGrant meant a landlord who had
+      // submitted was still told to "start verification".
+      isPending: kyc === 'pending' && Boolean(user?.kyc_submitted_at ?? awaitingRoleGrant),
       isRejected: kyc === 'rejected',
       isRequired: isRequired && kyc !== 'approved',
-      isSoftPrompt: neverBlocked && kyc !== 'approved',
       awaitingRoleGrant,
-      kycPath: isRequired || awaitingRoleGrant ? '/app/verification' : '/app/profile',
+      // Always the verification screen. This used to fall back to /app/profile
+      // for roles that were not hard gated, which is a display-name and bio
+      // form — users following the banner landed somewhere with no NIN field,
+      // no document upload and no guarantors, and reasonably concluded the
+      // platform had no verification at all.
+      kycPath: '/app/verification',
     };
   }, [user]);
 }
@@ -125,6 +160,7 @@ const KycGateContext = createContext<KycGateContextValue | null>(null);
 
 export function KycGateProvider({ children }: { children: ReactNode }) {
   const state = useKycState();
+  const userRole = useAuthStore((s) => s.user?.role);
   const navigate = useNavigate();
   const [pendingAction, setPendingAction] = useState<GatedAction | null>(null);
 
@@ -132,18 +168,34 @@ export function KycGateProvider({ children }: { children: ReactNode }) {
     (action: GatedAction) => {
       if (state.isVerified) return true;
 
+      // Reporting a crime is never blocked — see REPORTING_ACTIONS above.
+      const reportingExempt =
+        REPORTING_ACTIONS.includes(action) &&
+        !!userRole &&
+        REPORTING_EXEMPT_ROLES.includes(userRole);
+
+      if (reportingExempt) {
+        setPendingAction(action);
+        return true;
+      }
+
       // Always prompt — but only stop the action for hard-gated roles.
       setPendingAction(action);
       return !state.isRequired;
     },
-    [state.isVerified, state.isRequired]
+    [state.isVerified, state.isRequired, userRole]
   );
 
   const close = () => setPendingAction(null);
 
   const value = useMemo(() => ({ requireKyc, state }), [requireKyc, state]);
 
-  const blocking = state.isRequired;
+  const blocking = state.isRequired && !(
+    pendingAction !== null &&
+    REPORTING_ACTIONS.includes(pendingAction) &&
+    !!userRole &&
+    REPORTING_EXEMPT_ROLES.includes(userRole)
+  );
   const label = pendingAction ? ACTION_LABELS[pendingAction] : 'continue';
 
   return (

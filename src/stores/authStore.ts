@@ -36,7 +36,13 @@ interface AuthState {
     email: string,
     password: string,
     rememberMe?: boolean
-  ) => Promise<{ error: string | null; user?: Profile | null }>;
+  ) => Promise<{
+    error: string | null;
+    user?: Profile | null;
+    /** True when the address has not been confirmed — route to OTP entry. */
+    needsVerification?: boolean;
+    email?: string;
+  }>;
   verifyEmailOtp: (
     email: string,
     token: string
@@ -64,6 +70,11 @@ const SELF_EDITABLE_FIELDS = [
   'bio',
   'location',
 ] as const;
+
+/** Where auth emails should send the user back to. */
+function siteOrigin(): string {
+  return import.meta.env.VITE_SITE_URL || window.location.origin;
+}
 
 function pickSelfEditable(updates: Partial<Profile>): Partial<Profile> {
   const out: Record<string, unknown> = {};
@@ -128,7 +139,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   signUp: async (email, password, role, fullName) => {
     try {
-      const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+      const siteUrl = siteOrigin();
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -144,7 +155,25 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (error) return { error: friendlyAuthError(error.message) };
       if (!data.user) return { error: 'Signup failed. Please try again.' };
 
-      if (data.session) {
+      // A session here means the project has "Confirm email" switched off and
+      // Supabase auto-confirmed the account. We do not accept that: the address
+      // is unproven, so the session is discarded and the user is sent to OTP
+      // entry like everyone else.
+      //
+      // Without this, registering with someone else's email grants immediate
+      // access under their identity.
+      if (data.session && !data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        set({ user: null, hasSession: false, isAuthenticated: false });
+        await supabase.auth.resend({
+          type: 'signup',
+          email,
+          options: { emailRedirectTo: `${siteUrl}/login` },
+        }).catch(() => {/* the code from signUp is still valid */});
+        return { error: null, needsVerification: true };
+      }
+
+      if (data.session && data.user.email_confirmed_at) {
         set({ hasSession: true });
         await get().fetchProfile(data.user.id);
         return { error: null, needsVerification: false };
@@ -167,6 +196,37 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { error: friendlyAuthError(error.message) };
       if (!data.user) return { error: 'Sign in failed. Please try again.' };
+
+      // Refuse an unconfirmed address.
+      //
+      // Supabase only blocks this itself when "Confirm email" is enabled on the
+      // project. With it off, signUp returns a live session and the account can
+      // sign in having never proved it owns the address — which means anyone can
+      // register under someone else's email and start filing cases as them.
+      //
+      // This is the client half. The project setting is the authoritative half
+      // and still needs enabling; see DEPLOYMENT.md.
+      if (!data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        set({ user: null, hasSession: false, isAuthenticated: false });
+
+        // Actually send the code the message promises. Without this the user is
+        // bounced to the OTP screen holding a code from signup that may be
+        // hours old, and told a new one is on the way that never arrives.
+        const { error: resendError } = await supabase.auth.resend({
+          type: 'signup',
+          email,
+          options: { emailRedirectTo: `${siteOrigin()}/login` },
+        });
+
+        return {
+          error: resendError
+            ? 'Confirm your email address first. Use the code we sent when you registered, or request a new one.'
+            : 'Confirm your email address first. We have sent you a new code.',
+          needsVerification: true,
+          email: data.user.email ?? email,
+        };
+      }
 
       set({ hasSession: !!data.session });
       await get().fetchProfile(data.user.id);
@@ -199,7 +259,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   resendEmailOtp: async (email) => {
     try {
-      const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+      const siteUrl = siteOrigin();
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,

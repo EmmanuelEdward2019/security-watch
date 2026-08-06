@@ -30,7 +30,7 @@ export function KycBanner() {
   });
 
   if (state.isVerified) return null;
-  if (!state.isRequired && !state.isSoftPrompt && !state.awaitingRoleGrant) return null;
+  if (!state.isRequired && !state.awaitingRoleGrant) return null;
 
   const dismissible = !state.isRequired;
   if (dismissible && dismissed) return null;

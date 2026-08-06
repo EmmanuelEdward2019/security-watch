@@ -80,6 +80,13 @@ export interface Profile {
    */
   requested_role?: UserRole | null;
   role_confirmed_at?: string | null;
+  /**
+   * Set by submit_kyc_for_review() (migration 016). kyc_status defaults to
+   * 'pending' on a new account, so it cannot on its own distinguish "never
+   * started" from "submitted, awaiting review" — this can. Optional because
+   * clients built before 016 is applied will not receive it.
+   */
+  kyc_submitted_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -155,6 +162,55 @@ export interface Investigator {
   created_at: string;
   updated_at?: string;
   profile?: Profile;
+
+  // ── Added by migration 013 (KYC detail capture) ──────────────────────────
+  // submit_kyc_for_review() refuses an application missing date_of_birth,
+  // residential_address, professional_summary or specialization, so these are
+  // effectively required at submission even though the columns are nullable
+  // (an application is built up across several visits).
+  date_of_birth?: string;
+  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say';
+  national_id_number?: string;
+  residential_address?: string;
+  state_of_residence?: string;
+  nationality?: string;
+  professional_summary?: string;
+  qualifications?: string;
+  certifications?: string[];
+  license_number?: string;
+  licensing_body?: string;
+  previous_employer?: string;
+  previous_position?: string;
+  languages?: string[];
+  submitted_at?: string;
+  applied_for_role?: 'investigator' | 'lawyer' | 'medical_expert';
+}
+
+/** A supporting file attached to a KYC application. See migration 013. */
+export interface KycDocument {
+  id: string;
+  investigator_id: string;
+  uploaded_by: string;
+  document_type:
+    | 'national_id'
+    | 'passport'
+    | 'drivers_license'
+    | 'service_record'
+    | 'academic_certificate'
+    | 'professional_certificate'
+    | 'call_to_bar'
+    | 'medical_license'
+    | 'police_clearance'
+    | 'reference_letter'
+    | 'proof_of_address'
+    | 'cv'
+    | 'other';
+  label?: string;
+  file_path: string;
+  file_name: string;
+  file_size?: number;
+  file_type?: string;
+  created_at: string;
 }
 
 /** One suggestion from the match-investigator function. */

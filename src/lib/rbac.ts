@@ -48,7 +48,26 @@ const ROUTE_PERMISSIONS: { path: string; roles: UserRole[]; exact?: boolean }[] 
   // The `investigators` table backs all three reviewed roles; the name is
   // historical. `admin_review_investigator()` grants whichever role the
   // applicant requested.
-  { path: '/app/verification', roles: ['complainant', 'investigator', 'lawyer', 'medical_expert'] },
+  //
+  // Open to every signed-in role. Landlords, media agents and witnesses were
+  // previously excluded, so the "complete your verification" banner shown to
+  // them pointed at a page they were not permitted to load — it fell back to
+  // /app/profile, which is a display-name-and-bio form with no NIN, no document
+  // upload and no guarantors. This is the only screen that performs identity
+  // verification, so every role that can be asked to verify must reach it.
+  {
+    path: '/app/verification',
+    roles: [
+      'complainant',
+      'investigator',
+      'lawyer',
+      'medical_expert',
+      'witness',
+      'landlord',
+      'tenant',
+      'media_agent',
+    ],
+  },
   { path: '/app/availability', roles: ['investigator'] },
   { path: '/app/earnings', roles: ['investigator', 'lawyer'] },
   { path: '/app/legal-documents', roles: ['lawyer'] },

@@ -17,7 +17,18 @@ import { supabase } from '@/lib/supabase';
 import { ROLE_HOME } from '@/lib/rbac';
 import toast from 'react-hot-toast';
 
-const CODE_LENGTH = 8;
+/**
+ * Six digits, matching Supabase's default.
+ *
+ * It was eight, which is the maximum Supabase allows and which overflowed the
+ * viewport on a narrow phone — eight boxes plus gaps exceeded 320px, so the row
+ * ran off the edge. Six is the industry norm, still 10^6 combinations against a
+ * short expiry and a rate limit, and fits comfortably.
+ *
+ * This must match Authentication → Providers → Email → OTP length in the
+ * Supabase dashboard. If that is still 8, a valid code will not fit here.
+ */
+const CODE_LENGTH = 6;
 
 export function VerifyOtpPage() {
   const navigate = useNavigate();
@@ -246,7 +257,7 @@ export function VerifyOtpPage() {
                   </div>
 
                   {/* 6-box digit input */}
-                  <div className="flex gap-1.5 justify-center mb-6">
+                  <div className="mb-6 flex w-full justify-center gap-1.5 sm:gap-2">
                     {digits.map((d, i) => (
                       <input
                         key={i}
@@ -254,14 +265,15 @@ export function VerifyOtpPage() {
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]"
-                        maxLength={8}
+                        maxLength={CODE_LENGTH}
                         value={d}
                         onChange={(e) => handleDigitChange(i, e.target.value)}
                         onKeyDown={(e) => handleKeyDown(i, e)}
                         onFocus={(e) => e.target.select()}
                         disabled={verifying}
                         className={`
-                          w-9 h-11 text-center text-lg font-bold rounded-lg border-2 outline-none
+                          h-12 w-full max-w-[3rem] min-w-0 flex-1
+                          text-center text-lg font-bold rounded-lg border-2 outline-none
                           transition-all select-all
                           ${d ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-surface-300 text-surface-900'}
                           focus:border-brand-500 focus:ring-2 focus:ring-brand-200

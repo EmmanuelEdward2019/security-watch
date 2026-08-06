@@ -136,16 +136,59 @@ jobs:
           exit $missing
 
       - name: Every SECURITY DEFINER function pins search_path
+        # Two earlier versions of this check were wrong in opposite directions.
+        #
+        # Counting "SECURITY DEFINER" lines against "SET search_path" lines per
+        # file reported 001, 004, 010 and 011 as failures purely because those
+        # files mention the phrase in a comment — the job had been red long
+        # enough to be ignored, which is worse than having no check.
+        #
+        # Parsing only the function header then missed migration 001 entirely,
+        # because 001 writes `$$ LANGUAGE plpgsql SECURITY DEFINER;` after the
+        # body rather than before it. That is a false negative on the exact
+        # class of bug this job exists to catch.
+        #
+        # This version parses whole definitions, inspects header and trailer,
+        # and resolves each function to its final CREATE OR REPLACE so that a
+        # function defined unsafely in 001 and corrected in 004 is not reported.
         run: |
-          bad=0
-          for file in supabase/migrations/*.sql; do
-            # Each function body is separated by a blank line before the next
-            # CREATE; check that DEFINER and SET search_path appear together.
-            definers=$(grep -c 'SECURITY DEFINER' "$file" || true)
-            paths=$(grep -c 'SET search_path' "$file" || true)
-            if [ "$definers" -gt "$paths" ]; then
-              echo "::error file=${file}::${definers} SECURITY DEFINER function(s) but only ${paths} SET search_path clause(s)"
-              bad=1
-            fi
-          done
-          exit $bad
+          python3 - <<'CHECK'
+          import glob, re, sys
+
+          # A definition is: CREATE ... FUNCTION name(args) <header> AS $$ body $$ <trailer> ;
+          # SECURITY DEFINER and SET search_path may appear in EITHER the header or the
+          # trailer -- migration 001 uses the trailer form, which an earlier version of
+          # this check never inspected.
+          DEF = re.compile(
+              r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>[\w.]+)\s*\("
+              r"(?P<header>.*?)AS\s*(?P<tag>\$[a-zA-Z_]*\$)"
+              r"(?P<body>.*?)(?P=tag)(?P<trailer>[^;]*);",
+              re.IGNORECASE | re.DOTALL,
+          )
+
+          # Last definition wins: production reflects the final CREATE OR REPLACE, so a
+          # function defined unsafely in 001 and corrected in 004 is not a live finding.
+          final = {}
+          for path in sorted(glob.glob("supabase/migrations/*.sql")):
+              raw = open(path, encoding="utf-8").read()
+              body = "\n".join(l for l in raw.splitlines() if not l.lstrip().startswith("--"))
+              for m in DEF.finditer(body):
+                  decl = m.group("header") + " " + m.group("trailer")
+                  name = m.group("name").split(".")[-1].lower()
+                  final[name] = (path, decl)
+
+          failures = [
+              (path, name)
+              for name, (path, decl) in final.items()
+              if re.search(r"SECURITY\s+DEFINER", decl, re.I)
+              and not re.search(r"SET\s+search_path", decl, re.I)
+          ]
+
+          for path, name in sorted(failures):
+              print(f"::error file={path}::{name}() is SECURITY DEFINER without SET search_path")
+
+          print(f"Checked {len(final)} functions.")
+          if failures:
+              sys.exit(1)
+          print("Every live SECURITY DEFINER function pins search_path.")
+          CHECK
