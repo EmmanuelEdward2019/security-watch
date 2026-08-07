@@ -38,13 +38,25 @@
 # record of what those values are supposed to be.
 # =============================================================================
 
-[auth.hook.send_email]
-# Routes every auth email through the auth-send-email edge function, which
-# verifies the Standard Webhooks signature before sending anything. Recorded
-# here so a future `config push` cannot silently disable it.
-enabled = true
-uri = "https://pqjwzidrgkskpjihxvxa.supabase.co/functions/v1/auth-send-email"
-secrets = "env(SEND_EMAIL_HOOK_SECRET)"
+# The live send-email hook configuration, recorded but DELIBERATELY COMMENTED.
+#
+# Leaving it active breaks the CLI for anyone who does not have
+# SEND_EMAIL_HOOK_SECRET exported: the config is validated locally on every
+# command, and an unresolved env() fails with
+#
+#   Invalid hook config: auth.hook.send_email.secrets must be formatted as
+#   "v1,whsec_<base64_encoded_secret>" with a minimum length of 32 characters
+#
+# which blocks `db push`, `db query`, `migration list` — everything. Since the
+# guidance above is not to run `config push` against this project at all, an
+# active block buys nothing and costs a working CLI.
+#
+# To work on the hook: export SEND_EMAIL_HOOK_SECRET, then uncomment.
+#
+# [auth.hook.send_email]
+# enabled = true
+# uri = "https://pqjwzidrgkskpjihxvxa.supabase.co/functions/v1/auth-send-email"
+# secrets = "env(SEND_EMAIL_HOOK_SECRET)"
 
 [auth]
 # The client enforces 10 with complexity (src/lib/password.ts). Left at 6, the
