@@ -122,9 +122,13 @@ export function CreateCasePage() {
       return;
     }
 
-    // Prompts an unverified complainant but does NOT stop them. Reporting a
-    // crime is never gated — see useKycGate for why that distinction exists.
-    requireKyc('create_case');
+    // A first filing is never blocked; a second one waits for verification.
+    // The return value was previously discarded, which made this call a prompt
+    // with no teeth — the gate could never stop anything here. See useKycGate.
+    if (!requireKyc('create_case')) {
+      setIsSubmitting(false);
+      return;
+    }
 
     setIsSubmitting(true);
     try {

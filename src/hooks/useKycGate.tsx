@@ -7,11 +7,12 @@
  * failing here, and `eslint .` exits non-zero on errors — so this was quietly
  * failing CI's lint step, and with it the verify job that deploy.yml gates on.
  */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, ShieldAlert, ArrowRight, Clock, X } from 'lucide-react';
 import { Modal, Button } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types';
 
 /**
@@ -22,18 +23,11 @@ import type { UserRole } from '@/types';
  * at it: an unverified account could file a case and simply never be told why
  * nothing happened afterwards.
  *
- * Two levels, deliberately different:
+ * Verification is required of EVERY role. The earlier two-tier model — where
+ * complainant and witness were permanently "soft" and merely nagged — is gone:
+ * an account nobody has identified could otherwise file indefinitely.
  *
- *   * **Soft** — a dismissible banner and a prompt on protected actions. Used
- *     for complainants and witnesses, who must never be prevented from
- *     reporting a crime. We ask; we do not block.
- *   * **Hard** — the action does not proceed. Used for roles that would be
- *     handling other people's data or taking money: investigators, lawyers,
- *     experts, landlords and media agents.
- *
- * That distinction matters. Blocking a kidnapping report behind a verification
- * wall would be indefensible, so `complainant` and `witness` are never hard
- * gated regardless of the action.
+ * The single exception is a first filing. See REPORTING_ACTIONS below.
  */
 
 /**
@@ -55,17 +49,25 @@ const HARD_GATED_ROLES: UserRole[] = [
 ];
 
 /**
- * The one carve-out, and it is deliberate.
+ * The one carve-out, and it is deliberate: a FIRST filing is never blocked.
  *
- * Verification is required for everything a user does on this platform except
- * the initial act of reporting. Someone reporting a kidnapping, an assault or a
- * disappearance must be able to get that report in front of us at 2am without
- * first finding their NIN slip and two guarantors. They are prompted hard, they
- * cannot be assigned an investigator, message anyone, pay for anything or see
- * another user's material until they verify — but the report itself lands.
+ * Someone reporting a kidnapping, an assault or a disappearance must be able to
+ * get that report in front of us at 2am without first finding their NIN slip
+ * and two guarantors. So a complainant or witness who has never filed before may
+ * file once, unverified.
  *
- * Remove these two entries to make verification absolute, including for the
- * first report. That is a product decision, not a technical constraint.
+ * It is an on-ramp, not a standing exemption. Once they have filed once, the
+ * next one waits for verification like everything else — otherwise an account
+ * nobody has identified can file indefinitely, which is the abuse this platform
+ * cannot absorb.
+ *
+ * This previously exempted the two roles unconditionally, which diverged from
+ * the mobile client: the same user filing a second report was allowed on web and
+ * blocked on mobile. Both now implement the one-time on-ramp.
+ *
+ * Scoped tightly on purpose: only these two actions, only these two roles, only
+ * before the first filing. Evidence upload, property listing, publishing and
+ * payment are never carved out for anyone.
  */
 const REPORTING_ACTIONS: GatedAction[] = ['create_case', 'file_report'];
 const REPORTING_EXEMPT_ROLES: UserRole[] = ['complainant', 'witness'];
@@ -160,21 +162,69 @@ const KycGateContext = createContext<KycGateContextValue | null>(null);
 
 export function KycGateProvider({ children }: { children: ReactNode }) {
   const state = useKycState();
-  const userRole = useAuthStore((s) => s.user?.role);
+  const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
   const [pendingAction, setPendingAction] = useState<GatedAction | null>(null);
+
+  /**
+   * Gate on the role the user is ACTING as, not the one stored on the profile.
+   *
+   * Since migration 004 an investigator applicant keeps `role = 'complainant'`
+   * until an admin approves them. Reading `role` directly handed those
+   * applicants the complainant first-filing on-ramp, which was never meant for
+   * them. `useKycState` already resolves this; use the same answer here so the
+   * banner and the gate cannot disagree.
+   */
+  const effectiveRole = (
+    state.awaitingRoleGrant ? user?.requested_role : user?.role
+  ) as UserRole | undefined;
+
+  /**
+   * Whether this account has already filed.
+   *
+   * `undefined` means we do not know yet — the query is in flight or failed.
+   * That case FAILS OPEN for the two reporting actions: wrongly blocking a first
+   * report because a count query timed out is far worse than letting a second
+   * one through. Matches the mobile client's `hasFiledBefore` contract exactly.
+   */
+  const [hasFiledBefore, setHasFiledBefore] = useState<boolean | undefined>(undefined);
+
+  useEffect(() => {
+    // Only relevant to an unverified account that could use the on-ramp.
+    if (!user?.user_id || state.isVerified || !effectiveRole) return;
+    if (!REPORTING_EXEMPT_ROLES.includes(effectiveRole)) return;
+
+    let active = true;
+
+    void supabase
+      .from('cases')
+      .select('id', { count: 'exact', head: true })
+      .eq('complainant_id', user.user_id)
+      .then(({ count, error }) => {
+        if (!active) return;
+        // Leave it undefined on error so the on-ramp stays open.
+        if (error) return;
+        setHasFiledBefore((count ?? 0) > 0);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user?.user_id, state.isVerified, effectiveRole]);
 
   const requireKyc = useCallback(
     (action: GatedAction) => {
       if (state.isVerified) return true;
 
-      // Reporting a crime is never blocked — see REPORTING_ACTIONS above.
-      const reportingExempt =
+      // A FIRST report is never blocked — see REPORTING_ACTIONS above.
+      // `hasFiledBefore !== true` is deliberate: unknown fails open.
+      const onRampApplies =
         REPORTING_ACTIONS.includes(action) &&
-        !!userRole &&
-        REPORTING_EXEMPT_ROLES.includes(userRole);
+        !!effectiveRole &&
+        REPORTING_EXEMPT_ROLES.includes(effectiveRole) &&
+        hasFiledBefore !== true;
 
-      if (reportingExempt) {
+      if (onRampApplies) {
         setPendingAction(action);
         return true;
       }
@@ -183,18 +233,21 @@ export function KycGateProvider({ children }: { children: ReactNode }) {
       setPendingAction(action);
       return !state.isRequired;
     },
-    [state.isVerified, state.isRequired, userRole]
+    [state.isVerified, state.isRequired, effectiveRole, hasFiledBefore]
   );
 
   const close = () => setPendingAction(null);
 
   const value = useMemo(() => ({ requireKyc, state }), [requireKyc, state]);
 
+  // The modal only offers a dismiss route when the action is actually going
+  // ahead — i.e. the user is using their one-time on-ramp.
   const blocking = state.isRequired && !(
     pendingAction !== null &&
     REPORTING_ACTIONS.includes(pendingAction) &&
-    !!userRole &&
-    REPORTING_EXEMPT_ROLES.includes(userRole)
+    !!effectiveRole &&
+    REPORTING_EXEMPT_ROLES.includes(effectiveRole) &&
+    hasFiledBefore !== true
   );
   const label = pendingAction ? ACTION_LABELS[pendingAction] : 'continue';
 
