@@ -14,24 +14,37 @@
 # the repo rather than living solely as dashboard checkboxes nobody can audit.
 #
 # ---------------------------------------------------------------------------
-# READ BEFORE RUNNING `supabase config push`
+# DO NOT RUN `supabase config push` AGAINST THIS PROJECT
 # ---------------------------------------------------------------------------
 # `config push` syncs the WHOLE auth block, not just the keys written here, and
-# there is no `config pull` in the CLI to capture the project's current state
-# first. Anything configured in the dashboard but absent from this file — most
-# importantly the custom SMTP settings that route auth email through Resend, and
-# the redirect allow-list — can be reset to CLI defaults.
+# the CLI has no `config pull` to capture the project's current state first. Any
+# key absent from this file is pushed as a CLI *default*, not left alone.
 #
-# Losing the SMTP configuration would silently stop every auth email: OTPs,
-# password resets, confirmations. That is a worse outcome than the settings this
-# block is trying to fix.
+# That is not theoretical here. Two things would break:
 #
-# So either:
-#   a) run `supabase config push`, read the diff it prints, and abort if it
-#      proposes touching smtp/site_url/redirect settings; or
-#   b) set these four values in the dashboard and treat this block as the
-#      documented source of truth.
+#   1. The Send Email Hook. SEND_EMAIL_HOOK_SECRET is set on the project and the
+#      auth-send-email function is deployed, so auth mail is delivered through
+#      the hook below. A push without the [auth.hook.send_email] block would
+#      disable it and silently stop every OTP, password reset and confirmation
+#      email. OTP *is* the login mechanism, so that locks out every user.
+#
+#   2. site_url defaults to http://localhost:3000, which would point every
+#      password-reset and confirmation link at the user's own machine.
+#
+# The hook is recorded below so the file is no longer a trap, but the redirect
+# allow-list and any SMTP settings still are not mirrored here. Until they are,
+# set auth values in the dashboard — Authentication → Providers → Email, and
+# Authentication → Attack Protection — and treat this block as the reviewable
+# record of what those values are supposed to be.
 # =============================================================================
+
+[auth.hook.send_email]
+# Routes every auth email through the auth-send-email edge function, which
+# verifies the Standard Webhooks signature before sending anything. Recorded
+# here so a future `config push` cannot silently disable it.
+enabled = true
+uri = "https://pqjwzidrgkskpjihxvxa.supabase.co/functions/v1/auth-send-email"
+secrets = "env(SEND_EMAIL_HOOK_SECRET)"
 
 [auth]
 # The client enforces 10 with complexity (src/lib/password.ts). Left at 6, the
