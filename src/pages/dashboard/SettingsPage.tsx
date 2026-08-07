@@ -126,7 +126,7 @@ export function SettingsPage() {
       return;
     }
     if (newPassword.length < PASSWORD_MIN_LENGTH) {
-      toast.error('Password must be at least 8 characters');
+      toast.error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -330,7 +330,7 @@ export function SettingsPage() {
           <Input
             label="New Password"
             type="password"
-            placeholder="At least 8 characters"
+            placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
           />

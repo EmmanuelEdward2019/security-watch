@@ -22,7 +22,7 @@ import {
 import { Button, Input } from '@/components/ui';
 import { Card } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
-import { passwordSchema, checkPassword } from '@/lib/password';
+import { passwordSchema, checkPassword, PASSWORD_MIN_LENGTH } from '@/lib/password';
 import { cn } from '@/utils/cn';
 import { USER_ROLE_LABELS, type UserRole } from '@/types';
 import toast from 'react-hot-toast';
@@ -271,7 +271,7 @@ export function RegisterPage() {
                     label="Password"
                     type="password"
                     icon={Lock}
-                    placeholder="At least 10 characters"
+                    placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
                     error={step2Form.formState.errors.password?.message}
                     {...step2Form.register('password')}
                   />

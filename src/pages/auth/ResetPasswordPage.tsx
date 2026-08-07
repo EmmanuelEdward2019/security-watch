@@ -95,8 +95,16 @@ export default function ResetPasswordPage() {
     };
   }, []);
 
-  // Password strength helpers
-  const strength = getStrength(password);
+  /*
+   * Strength comes from the shared policy in lib/password.ts.
+   *
+   * This screen previously carried its own getStrength() scoring on 8- and
+   * 12-character thresholds, and a "Min. 8 characters" placeholder, while the
+   * rest of the app enforced 10 with complexity. So the meter could show a
+   * password as "Good" that the submit handler then rejected, and the
+   * placeholder advertised a floor that did not exist.
+   */
+  const strength = checkPassword(password);
 
   const handleReset = async () => {
     // Full policy, not just a length check — see lib/password.ts.
@@ -219,7 +227,7 @@ export default function ResetPasswordPage() {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Min. 8 characters"
+                      placeholder={`Min. ${PASSWORD_MIN_LENGTH} characters`}
                       autoComplete="new-password"
                       className="w-full pl-10 pr-12 py-3 border border-surface-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-surface-900"
                       autoFocus
@@ -241,7 +249,7 @@ export default function ResetPasswordPage() {
                           <div
                             key={level}
                             className={`h-1.5 flex-1 rounded-full transition-colors ${
-                              strength >= level
+                              strength.score >= level
                                 ? level <= 1
                                   ? 'bg-red-500'
                                   : level === 2
@@ -256,10 +264,20 @@ export default function ResetPasswordPage() {
                       </div>
                       <p className="text-xs text-surface-500">
                         Strength:{' '}
-                        <span className={strength >= 3 ? 'text-green-600 font-medium' : 'text-amber-600'}>
-                          {['', 'Weak', 'Fair', 'Good', 'Strong'][strength]}
+                        <span
+                          className={
+                            strength.acceptable
+                              ? 'text-green-600 font-medium'
+                              : 'text-amber-600'
+                          }
+                        >
+                          {strength.label}
                         </span>
                       </p>
+                      {/* Say what is missing, rather than only how weak it is. */}
+                      {strength.issues.length > 0 && (
+                        <p className="text-xs text-amber-600">{strength.issues[0]}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -308,7 +326,9 @@ export default function ResetPasswordPage() {
                     !password ||
                     !confirmPassword ||
                     password !== confirmPassword ||
-                    password.length < PASSWORD_MIN_LENGTH
+                    // Full policy, not just length — otherwise the button is
+                    // enabled for a password handleReset will refuse.
+                    !strength.acceptable
                   }
                   icon={Lock}
                 >
@@ -330,14 +350,3 @@ export default function ResetPasswordPage() {
   );
 }
 
-/** Returns 1–4 strength score for a password */
-function getStrength(pw: string): number {
-  if (!pw) return 0;
-  let score = 0;
-  if (pw.length >= 8) score++;
-  if (pw.length >= 12) score++;
-  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
-  if (/[0-9]/.test(pw)) score++;
-  if (/[^A-Za-z0-9]/.test(pw)) score++;
-  return Math.min(4, score) as 1 | 2 | 3 | 4;
-}

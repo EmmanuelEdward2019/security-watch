@@ -5,6 +5,59 @@
 # authenticate themselves some other way, and each of those verifies a signature
 # before doing any work.
 
+
+# =============================================================================
+# AUTH
+# =============================================================================
+# These four settings are the authoritative half of protections the clients can
+# only mitigate. They are recorded here so the intended state is reviewable in
+# the repo rather than living solely as dashboard checkboxes nobody can audit.
+#
+# ---------------------------------------------------------------------------
+# READ BEFORE RUNNING `supabase config push`
+# ---------------------------------------------------------------------------
+# `config push` syncs the WHOLE auth block, not just the keys written here, and
+# there is no `config pull` in the CLI to capture the project's current state
+# first. Anything configured in the dashboard but absent from this file — most
+# importantly the custom SMTP settings that route auth email through Resend, and
+# the redirect allow-list — can be reset to CLI defaults.
+#
+# Losing the SMTP configuration would silently stop every auth email: OTPs,
+# password resets, confirmations. That is a worse outcome than the settings this
+# block is trying to fix.
+#
+# So either:
+#   a) run `supabase config push`, read the diff it prints, and abort if it
+#      proposes touching smtp/site_url/redirect settings; or
+#   b) set these four values in the dashboard and treat this block as the
+#      documented source of truth.
+# =============================================================================
+
+[auth]
+# The client enforces 10 with complexity (src/lib/password.ts). Left at 6, the
+# API accepts `123456` for anyone calling it directly — verified against
+# production. Unified here so both halves agree.
+minimum_password_length = 10
+
+# Requires lowercase, uppercase, digits and symbols, matching passwordSchema.
+password_requirements = "lower_upper_letters_digits_symbols"
+
+[auth.email]
+# THE important one. With this false, signUp returns a live session for an
+# address the user has never proved they own, so anyone can register under
+# someone else's email and act as them. Both clients now discard such sessions,
+# but that is a client-side mitigation only — the API still issues them.
+enable_confirmations = true
+
+# Must match CODE_LENGTH in src/pages/auth/VerifyOtpPage.tsx and the mobile
+# client. A mismatch rejects every code entered and presents to users as an
+# email-delivery problem rather than a configuration one.
+otp_length = 6
+
+# One hour. Long enough for slow mobile delivery in poor coverage, short enough
+# that an intercepted code has limited value.
+otp_expiry = 3600
+
 [functions.auth-send-email]
 # Called by the Auth "Send Email" hook, which signs with SEND_EMAIL_HOOK_SECRET
 # rather than presenting a user JWT. The Standard Webhooks signature is
