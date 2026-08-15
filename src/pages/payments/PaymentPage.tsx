@@ -14,6 +14,7 @@ import {
 import { PRICE_MODULE_LABELS, type ServicePrice, type PriceModule, type Payment } from '@/types';
 import { cn } from '@/utils/cn';
 import toast from 'react-hot-toast';
+import { goToCheckout } from '@/lib/paymentRedirect';
 
 /**
  * Checkout.
@@ -129,7 +130,13 @@ export function PaymentPage() {
 
     // Hosted checkout, not the inline popup: the result is confirmed by webhook
     // rather than by a callback in this tab that we would have to trust.
-    window.location.href = data.authorizationUrl;
+    // Refuse to send a payer anywhere that is not a Paystack checkout host.
+    // See lib/paymentRedirect.ts — this is the last hop before card details.
+    if (!goToCheckout(data.authorizationUrl)) {
+      toast.error('The payment provider returned an address we do not trust. Nothing has been charged.');
+      setProcessing(false);
+      return;
+    }
   };
 
   // ── Returning from Paystack ────────────────────────────────────────────────

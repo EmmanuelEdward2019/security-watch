@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { startPayment, fetchServicePrices, formatCurrency } from '@/services/paymentService';
 import type { ServicePrice } from '@/types';
 import toast from 'react-hot-toast';
+import { goToCheckout } from '@/lib/paymentRedirect';
 
 export interface PaymentModalProps {
   isOpen: boolean;
@@ -86,7 +87,13 @@ export function PaymentModal({
       return;
     }
 
-    window.location.href = data.authorizationUrl;
+    // Refuse to send a payer anywhere that is not a Paystack checkout host.
+    // See lib/paymentRedirect.ts — this is the last hop before card details.
+    if (!goToCheckout(data.authorizationUrl)) {
+      toast.error('The payment provider returned an address we do not trust. Nothing has been charged.');
+      setProcessing(false);
+      return;
+    }
   };
 
   return (
