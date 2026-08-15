@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -29,6 +29,15 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+  const [searchParams] = useSearchParams();
+
+  // /login?reset=1 opens the reset dialog directly. The OTP screen links here
+  // for someone who reached signup with an address that already has an
+  // account — see VerifyOtpPage. Without this they would land on a plain
+  // sign-in form having just been told to reset their password.
+  useEffect(() => {
+    if (searchParams.get('reset') === '1') setShowForgot(true);
+  }, [searchParams]);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
   const navigate = useNavigate();
@@ -95,31 +104,51 @@ export default function LoginPage() {
 
 
 
+  /**
+   * Password reset request.
+   *
+   * The previous version tried to avoid email enumeration in the wording and
+   * then gave the answer away in the behaviour:
+   *
+   *   unknown address -> red error toast, modal stays open, no navigation
+   *   real address    -> green success toast, modal closes, navigates to /verify-otp
+   *
+   * Anyone could tell the two apart without reading a word, because only one of
+   * them changed the URL. It also printed the raw `error.message` for anything
+   * that did not match "not found" or "Invalid", which leaks server internals.
+   *
+   * Both paths are now indistinguishable: same message, same dismissal, same
+   * destination. A request for an address with no account simply never produces
+   * an email, and the OTP screen already offers a way back.
+   *
+   * Rate limiting is the one thing still surfaced, because it describes the
+   * person asking rather than whether the target exists, and they cannot act on
+   * it unless told.
+   */
   const handleForgotPassword = async () => {
-    if (!forgotEmail.trim()) {
+    const email = forgotEmail.trim();
+    if (!email) {
       toast.error('Please enter your email address');
       return;
     }
+
     setForgotLoading(true);
-    // Send OTP via magic-link flow (shouldCreateUser: false ensures no new account is created)
+    // shouldCreateUser: false — a reset request must never mint an account.
     const { error } = await supabase.auth.signInWithOtp({
-      email: forgotEmail.trim(),
+      email,
       options: { shouldCreateUser: false },
     });
     setForgotLoading(false);
-    if (error) {
-      // Common error: user not found — show a generic message to prevent email enumeration
-      toast.error(
-        error.message.includes('not found') || error.message.includes('Invalid')
-          ? 'If that email is registered, a reset code has been sent.'
-          : error.message
-      );
+
+    if (error && /rate limit|too many|after \d+ seconds/i.test(error.message)) {
+      toast.error('Too many requests. Wait a minute and try again.');
       return;
     }
+
     setShowForgot(false);
     setForgotEmail('');
-    toast.success('Check your email for a 6-digit reset code.');
-    navigate(`/verify-otp?email=${encodeURIComponent(forgotEmail.trim())}&mode=recovery`);
+    toast.success('If that email is registered, a 6-digit reset code is on its way.');
+    navigate(`/verify-otp?email=${encodeURIComponent(email)}&mode=recovery`);
   };
 
   return (

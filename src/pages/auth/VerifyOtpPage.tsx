@@ -326,6 +326,43 @@ export function VerifyOtpPage() {
                     )}
                   </div>
 
+                  {/*
+                    The way out for someone who already has an account.
+
+                    Signing up with an address that is already registered does
+                    not error — Supabase returns a decoy user so the endpoint
+                    cannot be used to find out who holds an account here, which
+                    on a crime-reporting platform is worth protecting. The cost
+                    is that such a user lands on this screen waiting for a code
+                    that will never arrive, with no idea why.
+
+                    These two links resolve that without telling anyone whether
+                    the address exists: they are shown to every signup, so they
+                    reveal nothing, and the person who genuinely has an account
+                    recognises their own situation and leaves.
+                  */}
+                  {mode === 'signup' && (
+                    <div className="mt-6 border-t border-surface-200 pt-4 text-center">
+                      <p className="text-sm text-surface-500">
+                        Already have an account?{' '}
+                        <Link
+                          to="/login"
+                          className="font-medium text-brand-600 hover:text-brand-700 hover:underline"
+                        >
+                          Sign in
+                        </Link>{' '}
+                        or{' '}
+                        <Link
+                          to="/login?reset=1"
+                          className="font-medium text-brand-600 hover:text-brand-700 hover:underline"
+                        >
+                          reset your password
+                        </Link>
+                        .
+                      </p>
+                    </div>
+                  )}
+
                   {/* Back link */}
                   <div className="mt-4 flex justify-center">
                     <Link

@@ -31,7 +31,16 @@ interface AuthState {
     password: string,
     role: UserRole,
     fullName: string
-  ) => Promise<{ error: string | null; needsVerification?: boolean }>;
+  ) => Promise<{
+    error: string | null;
+    needsVerification?: boolean;
+    /**
+     * The address already holds an account. Supabase hides this from the API
+     * response to prevent enumeration; we detect it from an empty `identities`
+     * array. Do NOT branch visible behaviour on it — see signUp.
+     */
+    alreadyRegistered?: boolean;
+  }>;
   signIn: (
     email: string,
     password: string,
@@ -154,6 +163,34 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
       if (error) return { error: friendlyAuthError(error.message) };
       if (!data.user) return { error: 'Signup failed. Please try again.' };
+
+      /*
+       * The address is already registered.
+       *
+       * With "Confirm email" enabled, Supabase deliberately does NOT error when
+       * you sign up with an existing address. It returns a decoy user object —
+       * a fresh id, no session, and crucially an EMPTY `identities` array — so
+       * that an attacker cannot use the signup endpoint to discover which
+       * addresses hold accounts.
+       *
+       * That protection matters more here than on a typical product: confirming
+       * that someone holds an account on a platform for reporting crimes is
+       * itself sensitive information about that person.
+       *
+       * But the flow treated the decoy as success and told the user to go and
+       * wait for a code that was never sent. So we detect it, and the caller
+       * keeps the user experience IDENTICAL either way — same message, same
+       * destination — while the OTP screen offers a way out for someone who
+       * already has an account. Branching the UI here would hand the attacker
+       * exactly the oracle the decoy exists to deny them.
+       */
+      const alreadyRegistered = Array.isArray(data.user.identities)
+        ? data.user.identities.length === 0
+        : false;
+
+      if (alreadyRegistered) {
+        return { error: null, needsVerification: true, alreadyRegistered: true };
+      }
 
       // A session here means the project has "Confirm email" switched off and
       // Supabase auto-confirmed the account. We do not accept that: the address
