@@ -83,6 +83,7 @@ const InstitutionsPage = lazyRoute(() => import('@/pages/media/InstitutionsPage'
 const InstitutionDetailPage = lazyRoute(() => import('@/pages/media/InstitutionDetailPage').then((m) => ({ default: m.InstitutionDetailPage })));
 const MediaAgentDashboard = lazyRoute(() => import('@/pages/media/MediaAgentDashboard').then((m) => ({ default: m.MediaAgentDashboard })));
 const FieldRecordingPage = lazyRoute(() => import('@/pages/media/FieldRecordingPage'));
+const MediaLibraryPage = lazyRoute(() => import('@/pages/media/MediaLibraryPage'));
 const ActivityLogPage = lazyRoute(() => import('@/pages/media/ActivityLogPage'));
 const ContentLibraryPage = lazyRoute(() => import('@/pages/media/ContentLibraryPage'));
 const PublishPage = lazyRoute(() => import('@/pages/media/PublishPage'));
@@ -232,6 +233,7 @@ export const router = createBrowserRouter([
           { path: 'media/institutions/:id', element: page(<InstitutionDetailPage />) },
           { path: 'media/upload', element: page(<UploadMediaPage />) },
           { path: 'media/record', element: page(<FieldRecordingPage />) },
+          { path: 'media/library', element: page(<MediaLibraryPage />) },
           { path: 'media/activity', element: page(<ActivityLogPage />) },
           { path: 'media/:id', element: page(<MediaDetailPage />) },
 

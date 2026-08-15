@@ -353,6 +353,40 @@ export interface MediaReport {
   reporter?: Profile;
 }
 
+/** A file the owner captured in the field or imported from another device. */
+export interface MediaLibraryItem {
+  id: string;
+  owner_id: string;
+  /** Storage path inside the private media-reports bucket. Sign it to read. */
+  file_path: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  /** SHA-256, lower-case hex. */
+  file_hash: string;
+  media_kind: 'video' | 'audio' | 'photo' | 'document';
+  /**
+   * 'capture' — recorded in the app, so captured_at and the coordinates were
+   * observed. 'import' — brought in from a wearable, body camera or scan, so
+   * the metadata is whatever the file carried and must not be presented as
+   * though the app witnessed it.
+   */
+  source: 'capture' | 'import';
+  captured_at?: string | null;
+  gps_latitude?: number | null;
+  gps_longitude?: number | null;
+  note?: string | null;
+  duration_seconds?: number | null;
+  created_at: string;
+}
+
+export const MEDIA_KIND_LABELS: Record<MediaLibraryItem['media_kind'], string> = {
+  video: 'Video',
+  audio: 'Audio',
+  photo: 'Photo',
+  document: 'Document',
+};
+
 export interface PerformanceScore {
   id: string;
   institution_id: string;

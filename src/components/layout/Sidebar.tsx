@@ -194,6 +194,7 @@ const roleNavSections: Record<UserRole, NavSection[]> = {
         { to: '/app/media/agent', label: 'My Dashboard', icon: LayoutDashboard },
         { to: '/app/media/institutions', label: 'Institutions', icon: Building2 },
         { to: '/app/media/record', label: 'Field Recording', icon: Video },
+        { to: '/app/media/library', label: 'Media Library', icon: FolderOpen },
         { to: '/app/media/upload', label: 'Upload Report', icon: Upload },
         { to: '/app/media/activity', label: 'Activity Log', icon: Clock },
       ],

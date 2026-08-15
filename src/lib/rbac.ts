@@ -86,6 +86,10 @@ const ROUTE_PERMISSIONS: { path: string; roles: UserRole[]; exact?: boolean }[] 
   // ── Media ─────────────────────────────────────────────────────
   { path: '/app/media/agent', roles: ['media_agent'], exact: true },
   { path: '/app/media/record', roles: ['media_agent'], exact: true },
+  // The library is not media-agent-only: investigators and medical experts
+  // also capture in the field, and everything they gather has to live
+  // somewhere before it is attached to a case.
+  { path: '/app/media/library', roles: ['media_agent', 'investigator', 'medical_expert', 'lawyer'], exact: true },
   { path: '/app/media/upload', roles: ['media_agent'], exact: true },
   { path: '/app/media/activity', roles: ['media_agent'], exact: true },
   { path: '/app/media/institutions', roles: ['media_agent', 'admin'] },

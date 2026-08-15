@@ -32,6 +32,7 @@ import {
   generateFileHash,
 } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+import { addToLibrary } from '@/services/mediaLibraryService';
 
 type CaptureMode = 'video' | 'audio' | 'photo';
 
@@ -133,6 +134,40 @@ export default function FieldRecordingPage() {
     };
   }, []);
 
+  /*
+   * Attach the live stream to the <video> element.
+   *
+   * This must be an effect rather than part of requestDevices, and that
+   * distinction was the whole bug behind "recapture after a capture fails".
+   *
+   * The mode buttons called setMode(m) and then requestDevices(m) on the same
+   * tick. setMode only *schedules* a render, so requestDevices ran while the
+   * DOM still reflected the previous mode. Two cases fell out of that:
+   *
+   *   audio -> video/photo : audio mode renders no <video> at all, so
+   *                          videoRef.current was null and srcObject was never
+   *                          assigned. The camera was live and the preview
+   *                          stayed black; takePhoto then drew an empty frame.
+   *   after a capture      : the preview replaces the <video>, so the ref was
+   *                          null again. discard() would have remounted it,
+   *                          but that is also just a scheduled state update.
+   *
+   * Keying on mode, permissionState and captured means this runs after the
+   * element is actually on screen, whatever route got us here.
+   */
+  useEffect(() => {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+
+    if (!video || !stream || mode === 'audio' || captured) return;
+    if (video.srcObject === stream) return;
+
+    video.srcObject = stream;
+    void video.play().catch(() => {
+      /* autoplay policy — the controls let them start it */
+    });
+  }, [mode, permissionState, captured]);
+
   const requestDevices = async (nextMode: CaptureMode) => {
     stopStream();
     setPermissionState('requesting');
@@ -149,13 +184,9 @@ export default function FieldRecordingPage() {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
-      if (nextMode !== 'audio' && videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {
-          /* autoplay policies — the user can press play */
-        });
-      }
-
+      // Attaching the stream to <video> happens in an effect, not here — see
+      // the note on attachStream below. Doing it inline was the bug: this runs
+      // before React has rendered the element we would be attaching to.
       setPermissionState('granted');
     } catch (err) {
       setPermissionState('denied');
@@ -273,9 +304,20 @@ export default function FieldRecordingPage() {
       return;
     }
 
+    /*
+     * A camera that is live but has not yet decoded a frame reports
+     * videoWidth 0. Falling back to 1280x720 there did not fail — it captured
+     * a blank rectangle and filed it as evidence, which is worse than an
+     * error. Wait for the first frame instead.
+     */
+    if (!video.videoWidth || !video.videoHeight) {
+      toast.error('The camera is still starting. Try again in a moment.');
+      return;
+    }
+
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const context = canvas.getContext('2d');
     if (!context) return;
 
@@ -373,14 +415,40 @@ export default function FieldRecordingPage() {
         .filter(Boolean),
     });
 
-    setSubmitting(false);
-
     if (error) {
+      setSubmitting(false);
       toast.error(error);
       return;
     }
 
-    toast.success('Report filed. An administrator will review it before it is published.');
+    /*
+     * Keep a copy in the library.
+     *
+     * The report has already been filed at this point, so a failure here must
+     * not read as the filing having failed — it has not. The library entry is
+     * what lets the same capture be attached to a case later, or reused,
+     * without recording it again; losing it is a inconvenience, not a lost
+     * report.
+     */
+    const { error: libraryError } = await addToLibrary({
+      ownerId: user.user_id,
+      file,
+      fileName: captured.name,
+      source: 'capture',
+      capturedAt,
+      latitude: coords?.latitude ?? null,
+      longitude: coords?.longitude ?? null,
+      note: title.trim(),
+    });
+
+    setSubmitting(false);
+
+    if (libraryError) {
+      toast.success('Report filed for review.');
+      toast.error('It could not be saved to your library, so you will not be able to reuse it.');
+    } else {
+      toast.success('Report filed for review, and saved to your library.');
+    }
     discard();
     setTitle('');
     setDescription('');
@@ -426,7 +494,10 @@ export default function FieldRecordingPage() {
                       onClick={() => {
                         setMode(m);
                         discard();
-                        void requestDevices(m);
+                        // Only re-acquire if we already have permission. On a
+                        // cold start the explicit button below does it, so the
+                        // browser prompt still follows a deliberate gesture.
+                        if (permissionState === 'granted') void requestDevices(m);
                       }}
                       aria-pressed={mode === m}
                       className={
