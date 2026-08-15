@@ -346,7 +346,7 @@ function AttachModal({
   item, cases, onClose, onDone,
 }: {
   item: MediaLibraryItem | null;
-  cases: { id: string; title: string; case_number?: string }[];
+  cases: { id: string; title: string; category: string; status: string }[];
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -388,9 +388,11 @@ function AttachModal({
           onChange={(e) => setCaseId(e.target.value)}
           options={[
             { value: '', label: 'Select a case…' },
+            // There is no case_number column. Category and status are what
+            // actually tell two similarly titled cases apart.
             ...cases.map((c) => ({
               value: c.id,
-              label: c.case_number ? `${c.case_number} — ${c.title}` : c.title,
+              label: `${c.title} — ${c.category}, ${c.status.replace(/_/g, ' ')}`,
             })),
           ]}
         />

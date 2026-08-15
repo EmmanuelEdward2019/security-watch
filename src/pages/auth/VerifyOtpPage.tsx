@@ -42,7 +42,15 @@ export function VerifyOtpPage() {
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(''));
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
+  /*
+   * Starts at 60, not 0.
+   *
+   * Every route into this screen has just triggered a send — signup, or the
+   * reset dialog. Offering "Resend" immediately invites a second request that
+   * Supabase rate-limits, and the user sees an error for doing the obvious
+   * thing. Mobile already started at 60; this matches it.
+   */
+  const [resendCooldown, setResendCooldown] = useState(60);
   const [verified, setVerified] = useState(false);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
