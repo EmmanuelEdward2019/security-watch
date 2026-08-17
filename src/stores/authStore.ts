@@ -161,6 +161,33 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         },
       });
 
+      /*
+       * "User already registered" is not a dead end.
+       *
+       * Someone who mistypes their address, comes back and retries the SAME
+       * address used to be told "an account already exists — sign in instead",
+       * for an account they cannot sign into because it was never confirmed.
+       * That is a loop with no exit.
+       *
+       * We cannot tell from here whether the existing account is confirmed —
+       * Supabase deliberately hides that to prevent enumeration. So we do the
+       * one thing that helps in both cases and reveals nothing: resend the
+       * confirmation and send them to OTP entry. If the account is unconfirmed
+       * they get a fresh code and carry on. If it is confirmed, nothing
+       * observable happens and the OTP screen's sign-in link is their way out.
+       */
+      if (error && /already registered|already been registered/i.test(error.message)) {
+        await supabase.auth.resend({
+          type: 'signup',
+          email,
+          options: { emailRedirectTo: `${siteUrl}/login` },
+        }).catch(() => {
+          /* Confirmed account, or rate limited. Either way, say nothing more. */
+        });
+
+        return { error: null, needsVerification: true, alreadyRegistered: true };
+      }
+
       if (error) return { error: friendlyAuthError(error.message) };
       if (!data.user) return { error: 'Signup failed. Please try again.' };
 
