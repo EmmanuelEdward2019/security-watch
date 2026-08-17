@@ -1,5 +1,5 @@
 -- ============================================================================
--- 017 — A personal media library for field capture                    (TSW-17)
+-- 018 — A personal media library for field capture                    (TSW-18)
 -- ============================================================================
 --
 -- Reported: media personnel capture video, audio, photos and documents, but
@@ -249,19 +249,19 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'media_library'
   ) THEN
-    RAISE EXCEPTION '017 failed: media_library was not created';
+    RAISE EXCEPTION '018 failed: media_library was not created';
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_tables
     WHERE schemaname = 'public' AND tablename = 'media_library' AND rowsecurity
   ) THEN
-    RAISE EXCEPTION '017 failed: RLS is not enabled on media_library';
+    RAISE EXCEPTION '018 failed: RLS is not enabled on media_library';
   END IF;
 
   IF (SELECT count(*) FROM pg_policies
       WHERE schemaname = 'public' AND tablename = 'media_library') < 4 THEN
-    RAISE EXCEPTION '017 failed: media_library is missing policies';
+    RAISE EXCEPTION '018 failed: media_library is missing policies';
   END IF;
 
   -- The escalation that matters here: an item must never be attachable to a
@@ -272,9 +272,9 @@ BEGIN
       AND p.proname = 'attach_library_item_to_case'
       AND p.prosrc LIKE '%shares_context_with%'
   ) THEN
-    RAISE EXCEPTION '017 failed: attach_library_item_to_case does not check case membership';
+    RAISE EXCEPTION '018 failed: attach_library_item_to_case does not check case membership';
   END IF;
 
-  RAISE NOTICE '017 verified';
+  RAISE NOTICE '018 verified';
 END;
 $$;
