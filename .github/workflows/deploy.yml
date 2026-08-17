@@ -60,6 +60,36 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # An unset secret interpolates to an empty string, so `--token=""` reaches
+      # the CLI and it answers:
+      #
+      #   Error: You defined "--token", but it's missing a value
+      #
+      # which says nothing about which of the three is missing, or that the
+      # problem is in repository settings rather than in this file. Checking
+      # first turns that into an instruction. Only emptiness is tested — no
+      # value is ever printed.
+      - name: Check deploy credentials are configured
+        run: |
+          missing=""
+          [ -z "${{ secrets.VERCEL_TOKEN }}" ]      && missing="$missing VERCEL_TOKEN"
+          [ -z "${{ secrets.VERCEL_ORG_ID }}" ]     && missing="$missing VERCEL_ORG_ID"
+          [ -z "${{ secrets.VERCEL_PROJECT_ID }}" ] && missing="$missing VERCEL_PROJECT_ID"
+
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo ""
+            echo "Set them under Settings -> Secrets and variables -> Actions:"
+            echo ""
+            echo "  VERCEL_TOKEN       Vercel -> Account Settings -> Tokens (scope: this team)"
+            echo "  VERCEL_ORG_ID      team_1UIil7XDtSbH5Px7VUTtD3SR"
+            echo "  VERCEL_PROJECT_ID  prj_zxJBrQhmYFLPVgGAX9pNKTlXgLUd"
+            echo ""
+            echo "Only the token is sensitive; the two ids are plain identifiers."
+            exit 1
+          fi
+          echo "All three deploy credentials are present."
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
