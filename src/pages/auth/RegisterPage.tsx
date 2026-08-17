@@ -106,19 +106,12 @@ export function RegisterPage() {
       return;
     }
     /*
-     * Deliberately identical for a new address and one that already has an
-     * account — same wording, same destination, same timing.
+     * Reached only for a genuinely new address, or one whose account exists but
+     * is not yet confirmed — the mistyped-address case, where a fresh code is
+     * what the person needs.
      *
-     * Supabase returns a decoy user rather than an error when the address is
-     * taken, precisely so the signup endpoint cannot be used to discover who
-     * holds an account here. Saying "that email is already registered", or
-     * merely routing somewhere else, would rebuild that oracle in the UI. On a
-     * platform for reporting crimes, confirming that a named person has an
-     * account is itself sensitive.
-     *
-     * The wording therefore covers both cases truthfully, and the OTP screen
-     * carries sign-in and reset links so someone who already has an account is
-     * never stuck waiting for a code that is not coming.
+     * An address holding a CONFIRMED account returns an error above and never
+     * gets here, so nobody is sent to wait for a code that will not arrive.
      */
     toast.success('Check your email for a 6-digit verification code.');
     navigate(`/verify-otp?email=${encodeURIComponent(step2Data.email)}&mode=signup`);

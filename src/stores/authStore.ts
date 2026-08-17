@@ -192,31 +192,44 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (!data.user) return { error: 'Signup failed. Please try again.' };
 
       /*
-       * The address is already registered.
+       * The address already holds a CONFIRMED account. Say so.
        *
-       * With "Confirm email" enabled, Supabase deliberately does NOT error when
-       * you sign up with an existing address. It returns a decoy user object —
-       * a fresh id, no session, and crucially an EMPTY `identities` array — so
-       * that an attacker cannot use the signup endpoint to discover which
-       * addresses hold accounts.
+       * With "Confirm email" on, Supabase does not error here. It returns a
+       * decoy user — fresh id, no session, and crucially an EMPTY `identities`
+       * array — so that the signup endpoint cannot be used to discover which
+       * addresses hold accounts. No duplicate is created either way; the unique
+       * constraint on auth.users.email settles that.
        *
-       * That protection matters more here than on a typical product: confirming
-       * that someone holds an account on a platform for reporting crimes is
-       * itself sensitive information about that person.
+       * This used to be treated as success, with the same message and the same
+       * destination as a real signup, so the enumeration protection was
+       * preserved end to end. The cost was that someone who genuinely forgot
+       * they had an account was told to go and wait for a code that would never
+       * arrive — and the platform looked broken to the person testing it.
        *
-       * But the flow treated the decoy as success and told the user to go and
-       * wait for a code that was never sent. So we detect it, and the caller
-       * keeps the user experience IDENTICAL either way — same message, same
-       * destination — while the OTP screen offers a way out for someone who
-       * already has an account. Branching the UI here would hand the attacker
-       * exactly the oracle the decoy exists to deny them.
+       * That trade has been made explicitly: a clear message wins. Note what is
+       * given up — anyone can now use this form to test whether an address
+       * holds an account here, and on a platform for reporting crimes, that an
+       * address has an account is itself information about that person.
+       *
+       * Two things limit it. Supabase rate-limits the signup endpoint, and the
+       * only route to this branch is a full form submission with a
+       * policy-passing password.
+       *
+       * NOTE the deliberate asymmetry with the "already registered" error
+       * above. Empty identities means the account exists AND is confirmed — a
+       * dead end worth naming. That error arrives for accounts that are NOT yet
+       * confirmed, which is the mistyped-address case, and resending there is
+       * what lets someone correct their own typo.
        */
       const alreadyRegistered = Array.isArray(data.user.identities)
         ? data.user.identities.length === 0
         : false;
 
       if (alreadyRegistered) {
-        return { error: null, needsVerification: true, alreadyRegistered: true };
+        return {
+          error: 'An account with that email already exists. Sign in, or reset your password.',
+          alreadyRegistered: true,
+        };
       }
 
       // A session here means the project has "Confirm email" switched off and
