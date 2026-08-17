@@ -127,15 +127,58 @@ jobs:
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Deployed to $URL"
 
+      # Checks the site users actually reach, not the raw deployment URL.
+      #
+      # The previous version curled steps.deploy.outputs.url and failed a
+      # perfectly good production deploy with:
+      #
+      #   Error: Deployment answered HTTP 302, expected 200
+      #
+      # That 302 was Deployment Protection redirecting the *.vercel.app URL to
+      # vercel.com/sso-api. It is proof the deployment exists and is protected,
+      # not proof it is broken — www.thesecuritywatch.com was serving 200
+      # throughout. Testing the protected URL could only ever have passed with
+      # protection turned off.
+      #
+      # So production is verified against its own domain, and a preview — which
+      # has no domain and is protected the same way — treats the SSO redirect as
+      # success while still catching a 404 or a 500.
       - name: Smoke check
+        env:
+          PRODUCTION_URL: https://www.thesecuritywatch.com
         run: |
-          URL="${{ steps.deploy.outputs.url }}"
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 4 --retry-all-errors "$URL")
-          if [ "$CODE" != "200" ]; then
-            echo "::error::Deployment answered HTTP $CODE, expected 200"
-            exit 1
+          TARGET="${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || 'production' }}"
+
+          if [ "$TARGET" = "production" ]; then
+            URL="$PRODUCTION_URL"
+          else
+            URL="${{ steps.deploy.outputs.url }}"
           fi
-          echo "Smoke check passed: HTTP 200"
+
+          echo "Checking $URL"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 4 --retry-all-errors "$URL")
+          LOCATION=$(curl -s -o /dev/null -w '%{redirect_url}' "$URL")
+
+          if [ "$CODE" = "200" ]; then
+            echo "Smoke check passed: HTTP 200"
+            exit 0
+          fi
+
+          # A redirect into Vercel's SSO means the deployment is up and behind
+          # Deployment Protection. Only acceptable for a preview.
+          case "$LOCATION" in
+            *vercel.com/sso-api*)
+              if [ "$TARGET" != "production" ]; then
+                echo "Smoke check passed: HTTP $CODE into Deployment Protection (preview is protected)"
+                exit 0
+              fi
+              echo "::error::Production answered HTTP $CODE into Vercel SSO. The production domain should not be protected."
+              exit 1
+              ;;
+          esac
+
+          echo "::error::$URL answered HTTP $CODE${LOCATION:+ -> $LOCATION}, expected 200"
+          exit 1
 
       - name: Summary
         if: always()
