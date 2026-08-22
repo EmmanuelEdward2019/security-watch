@@ -102,9 +102,18 @@ export function CaseOversightPage() {
       const fallback = await listAssignableInvestigators();
       if (cancelled) return;
 
-      if (fallback.error || fallback.data.length === 0) {
+      if (fallback.error) {
         toast.error(error ?? 'Could not load investigators');
         setMatchNote(null);
+      } else if (fallback.data.length === 0) {
+        // The fallback query succeeded and genuinely found nobody. That is a
+        // statement about the verification queue, not about the engine being
+        // down, and saying "could not load" here would send an admin hunting
+        // for a fault that does not exist.
+        setMatchNote(
+          'No investigator has been approved yet. Approve one in the verification ' +
+            'queue and they will appear here.'
+        );
       } else {
         setMatches(fallback.data);
         setMatchNote(
