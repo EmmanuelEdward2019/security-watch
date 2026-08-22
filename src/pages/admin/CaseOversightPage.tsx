@@ -250,36 +250,42 @@ export function CaseOversightPage() {
     >
       <h1 className="text-2xl font-bold text-surface-900">Case Oversight</h1>
 
-      <div className="flex flex-wrap gap-4">
+      {/*
+        A grid, not a flex row. Select and Input each wrap themselves in a
+        `w-full` div, so as flex children they every one claimed the full width
+        and the five filters stacked into a column on desktop — the `w-40` on
+        each only ever reached the inner control, never the wrapper.
+      */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Select
+          aria-label="Filter by status"
           options={[{ value: '', label: 'All statuses' }, ...STATUS_OPTIONS]}
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="w-40"
         />
         <Select
+          aria-label="Filter by category"
           options={[{ value: '', label: 'All categories' }, ...CATEGORY_OPTIONS]}
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="w-40"
         />
         <Select
+          aria-label="Filter by urgency"
           options={[{ value: '', label: 'All urgencies' }, ...URGENCY_OPTIONS]}
           value={urgencyFilter}
           onChange={(e) => setUrgencyFilter(e.target.value)}
-          className="w-40"
         />
         <Input
           type="date"
+          aria-label="Filed from"
           value={dateFrom}
           onChange={(e) => setDateFrom(e.target.value)}
-          className="w-40"
         />
         <Input
           type="date"
+          aria-label="Filed until"
           value={dateTo}
           onChange={(e) => setDateTo(e.target.value)}
-          className="w-40"
         />
       </div>
 

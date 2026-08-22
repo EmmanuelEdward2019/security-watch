@@ -3,6 +3,12 @@ import { type LucideIcon } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  /**
+   * Classes for the wrapping element, not the <input>. See Select — the
+   * default `w-full` wrapper makes a flex row of inputs stack.
+   */
+  containerClassName?: string;
+
   label?: string;
   error?: string;
   helperText?: string;
@@ -13,6 +19,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
   (
     {
       className,
+      containerClassName,
       label,
       error,
       helperText,
@@ -25,7 +32,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
 
     return (
-      <div className="w-full">
+      <div className={cn('w-full', containerClassName)}>
         {label && (
           <label
             htmlFor={inputId}

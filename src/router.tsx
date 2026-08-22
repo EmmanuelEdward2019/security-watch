@@ -102,6 +102,7 @@ const AdminDashboard = lazyRoute(() => import('@/pages/admin/AdminDashboard').th
 const UserManagementPage = lazyRoute(() => import('@/pages/admin/UserManagementPage').then((m) => ({ default: m.UserManagementPage })));
 const CaseOversightPage = lazyRoute(() => import('@/pages/admin/CaseOversightPage').then((m) => ({ default: m.CaseOversightPage })));
 const VerificationPage = lazyRoute(() => import('@/pages/admin/VerificationPage').then((m) => ({ default: m.VerificationPage })));
+const KycReviewPage = lazyRoute(() => import('@/pages/admin/KycReviewPage'));
 const MediaApprovalsPage = lazyRoute(() => import('@/pages/admin/MediaApprovalsPage').then((m) => ({ default: m.MediaApprovalsPage })));
 const PaymentMonitoringPage = lazyRoute(() => import('@/pages/admin/PaymentMonitoringPage').then((m) => ({ default: m.PaymentMonitoringPage })));
 const AnalyticsPage = lazyRoute(() => import('@/pages/admin/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })));
@@ -242,6 +243,10 @@ export const router = createBrowserRouter([
           { path: 'admin/users', element: page(<UserManagementPage />) },
           { path: 'admin/cases', element: page(<CaseOversightPage />) },
           { path: 'admin/verifications', element: page(<VerificationPage />) },
+          // The sidebar has linked here since KYC review shipped, but the
+          // route was never registered — so it fell through to the catch-all
+          // and bounced admins to the public home page.
+          { path: 'admin/kyc', element: page(<KycReviewPage />) },
           { path: 'admin/properties', element: page(<PropertyListPage />) },
           { path: 'admin/media', element: page(<MediaApprovalsPage />) },
           { path: 'admin/media/library', element: page(<ContentLibraryPage />) },

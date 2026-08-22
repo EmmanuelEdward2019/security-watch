@@ -11,12 +11,22 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   error?: string;
   options: SelectOption[];
   placeholder?: string;
+  /**
+   * Classes for the wrapping element, not the <select>.
+   *
+   * The wrapper is `w-full` by default, which is right for a form column and
+   * wrong inside a flex row: every child claims the full width and the row
+   * stacks vertically. `className` only ever reached the <select>, so sizing a
+   * filter with `w-40` looked correct and changed nothing. Pass the width here.
+   */
+  containerClassName?: string;
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
   (
     {
       className,
+      containerClassName,
       label,
       error,
       options,
@@ -29,7 +39,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const selectId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
 
     return (
-      <div className="w-full">
+      <div className={cn('w-full', containerClassName)}>
         {label && (
           <label
             htmlFor={selectId}

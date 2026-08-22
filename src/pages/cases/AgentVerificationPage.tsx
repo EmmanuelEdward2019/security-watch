@@ -252,7 +252,7 @@ export function AgentVerificationPage() {
        * `getPublicUrl()`, which produces a URL that resolves to an error — so
        * the documents were written but neither the applicant nor the reviewing
        * admin could ever open them. Paths are stored and signed at read time
-       * instead; see AgentVerificationTab.
+       * instead; see the admin KYC review screen.
        */
       const uploadToStorage = async (
         files: UploadedFile[],
