@@ -77,6 +77,19 @@ export function DashboardPage() {
   const myReports = mediaReports;
   const recentNotifications = notifications.slice(0, 5);
 
+  /*
+   * Derived from data this page already holds, rather than hardcoded.
+   *
+   * Several figures below were literal `0`s. That is not a placeholder, it is a
+   * false statement: a media agent who had filed reports against four
+   * institutions was shown "Institutions Visited: 0". The remaining ones that
+   * genuinely have no source yet show "--", which at least says "unknown"
+   * rather than asserting nothing happened.
+   */
+  const institutionsVisited = new Set(
+    myReports.map((r) => r.institution_id).filter(Boolean)
+  ).size;
+
   const quickActions: Record<string, QuickAction[]> = {
     complainant: [
       { label: 'Report a Case', icon: PlusCircle, to: '/app/cases/new', color: 'bg-forest-600' },
@@ -164,52 +177,52 @@ export function DashboardPage() {
       {/* Role-specific stats */}
       {(user?.role === 'complainant' || user?.role === 'witness') && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatsCard icon={FileText} label="My Cases" value={myCases.length} variant="brand" />
-          <StatsCard icon={ClipboardList} label="Active Cases" value={activeCases.length} variant="accent" />
+          <StatsCard icon={FileText} label="My Cases" value={myCases.length} variant="sky" />
+          <StatsCard icon={ClipboardList} label="Active Cases" value={activeCases.length} variant="warning" />
         </div>
       )}
 
       {user?.role === 'investigator' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatsCard icon={ClipboardList} label="Assigned Cases" value={assignedCases.length} variant="brand" />
-          <StatsCard icon={ShieldCheck} label="Under Investigation" value={assignedCases.filter((c) => c.status === 'investigating').length} variant="accent" />
-          <StatsCard icon={DollarSign} label="Pending Payout" value="--" variant="brand" />
+          <StatsCard icon={ClipboardList} label="Assigned Cases" value={assignedCases.length} variant="sky" />
+          <StatsCard icon={ShieldCheck} label="Under Investigation" value={assignedCases.filter((c) => c.status === 'investigating').length} variant="warning" />
+          <StatsCard icon={DollarSign} label="Pending Payout" value="--" variant="teal" />
         </div>
       )}
 
       {user?.role === 'lawyer' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatsCard icon={Scale} label="Legal Cases" value={assignedCases.length} variant="brand" />
-          <StatsCard icon={DollarSign} label="Earnings" value="--" variant="accent" />
+          <StatsCard icon={Scale} label="Legal Cases" value={assignedCases.length} variant="sky" />
+          <StatsCard icon={DollarSign} label="Earnings" value="--" variant="teal" />
         </div>
       )}
 
       {user?.role === 'medical_expert' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatsCard icon={Stethoscope} label="Assigned Cases" value={assignedCases.length} variant="brand" />
-          <StatsCard icon={Eye} label="Pending Analysis" value={0} variant="accent" />
+          <StatsCard icon={Stethoscope} label="Assigned Cases" value={assignedCases.length} variant="sky" />
+          <StatsCard icon={Eye} label="Pending Analysis" value="--" variant="warning" />
         </div>
       )}
 
       {user?.role === 'landlord' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatsCard icon={Home} label="My Properties" value={myProperties.length} variant="brand" />
-          <StatsCard icon={Users} label="Tenant Requests" value={0} variant="accent" />
-          <StatsCard icon={DollarSign} label="Revenue" value="--" variant="brand" />
+          <StatsCard icon={Home} label="My Properties" value={myProperties.length} variant="violet" />
+          <StatsCard icon={Users} label="Tenant Requests" value="--" variant="warning" />
+          <StatsCard icon={DollarSign} label="Revenue" value="--" variant="teal" />
         </div>
       )}
 
       {user?.role === 'tenant' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatsCard icon={Heart} label="Saved Properties" value={0} variant="brand" />
-          <StatsCard icon={FileText} label="My Requests" value={0} variant="accent" />
+          <StatsCard icon={Heart} label="Saved Properties" value="--" variant="rose" />
+          <StatsCard icon={FileText} label="My Requests" value="--" variant="sky" />
         </div>
       )}
 
       {user?.role === 'media_agent' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatsCard icon={Film} label="My Reports" value={myReports.length} variant="brand" />
-          <StatsCard icon={Building2} label="Institutions Visited" value={0} variant="accent" />
+          <StatsCard icon={Film} label="My Reports" value={myReports.length} variant="violet" />
+          <StatsCard icon={Building2} label="Institutions Visited" value={institutionsVisited} variant="sky" />
         </div>
       )}
 

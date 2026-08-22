@@ -45,3 +45,4 @@ export type { TextAreaProps } from './TextArea';
 
 export { LocationPicker } from './LocationPicker';
 export type { LocationPickerProps, LocationValue } from './LocationPicker';
+export { EMPTY_TINTS, type EmptyTint } from './tints';
