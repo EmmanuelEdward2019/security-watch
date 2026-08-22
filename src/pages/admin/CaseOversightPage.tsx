@@ -13,7 +13,11 @@ import {
 } from '@/components/ui';
 import type { Column } from '@/components/ui';
 import { useCaseStore } from '@/stores/caseStore';
-import { suggestInvestigators, assignCaseProfessional } from '@/services/matchingService';
+import {
+  suggestInvestigators,
+  assignCaseProfessional,
+  listAssignableInvestigators,
+} from '@/services/matchingService';
 import type { InvestigatorMatch } from '@/types';
 import type { Case, CaseStatus, CaseCategory, CaseUrgency } from '@/types';
 import {
@@ -72,12 +76,43 @@ export function CaseOversightPage() {
       const { data, error } = await suggestInvestigators(selectedCase.id);
       if (cancelled) return;
 
-      if (error) {
-        toast.error(error);
-      } else if (data) {
+      if (!error && data) {
         setMatches(data.matches);
         setMatchNote(data.note ?? null);
+        setLoadingMatches(false);
+        return;
       }
+
+      /*
+       * The matching engine is unreachable. Fall back to the raw list rather
+       * than leaving the admin unable to assign anyone.
+       *
+       * This screen used to render only what the edge function returned, so any
+       * failure — the function down, a network blip, the transport error the
+       * browser reports as "Failed to send a request to the Edge Function" —
+       * showed "no investigator matches this case yet" and offered no way to
+       * proceed. Ranking is a convenience; assigning an investigator to a
+       * criminal case is not, and it should not depend on a separate service
+       * being up.
+       *
+       * Nothing is loosened by this. The fallback applies the same eligibility
+       * rule, and admin_assign_case re-checks role and verification server-side
+       * regardless of which list the name came from.
+       */
+      const fallback = await listAssignableInvestigators();
+      if (cancelled) return;
+
+      if (fallback.error || fallback.data.length === 0) {
+        toast.error(error ?? 'Could not load investigators');
+        setMatchNote(null);
+      } else {
+        setMatches(fallback.data);
+        setMatchNote(
+          'Ranked suggestions are unavailable, so these are shown unranked. ' +
+            'Eligibility is unchanged: every investigator listed is verified and available.'
+        );
+      }
+
       setLoadingMatches(false);
     })();
 
@@ -324,8 +359,16 @@ export function CaseOversightPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium text-surface-900">{match.full_name}</p>
-                        {index === 0 && <Badge variant="success">Best match</Badge>}
-                        <Badge variant="info">{match.match_score} pts</Badge>
+                        {/* Only when the engine actually ranked them. The
+                            fallback list is unranked, and "Best match" or
+                            "0 pts" there would assert a judgement nothing
+                            made. */}
+                        {match.match_score > 0 && index === 0 && (
+                          <Badge variant="success">Best match</Badge>
+                        )}
+                        {match.match_score > 0 && (
+                          <Badge variant="info">{match.match_score} pts</Badge>
+                        )}
                       </div>
 
                       <p className="text-sm text-surface-500 mt-0.5">

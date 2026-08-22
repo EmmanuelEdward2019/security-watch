@@ -132,3 +132,67 @@ export function downloadReportHtml(html: string, institutionName: string): void 
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Assignable investigators, read straight from the database.
+ *
+ * The fallback for when the matching engine is unreachable.
+ *
+ * Assignment used to depend entirely on `match-investigator`: the modal
+ * rendered only what that function returned, so any failure — the function
+ * being down, a network blip, a transport error the browser reports as
+ * "Failed to send a request to the Edge Function" — left the admin looking at
+ * "No verified, available investigator matches this case yet" with no way to
+ * assign anybody. An edge function was a single point of failure for a core
+ * administrative operation.
+ *
+ * This is deliberately the same eligibility rule the engine applies —
+ * approved, available, and holding the investigator role — so the fallback
+ * list can never contain someone the engine would have excluded. What is lost
+ * without the engine is the ranking, not the safety: `admin_assign_case`
+ * re-checks role and verification server-side either way, so nothing here can
+ * grant access the RPC would refuse.
+ */
+export async function listAssignableInvestigators(): Promise<{
+  data: InvestigatorMatch[];
+  error: string | null;
+}> {
+  const { data, error } = await supabase
+    .from('investigators')
+    .select(
+      'id, user_id, specialization, service_area, rating, experience_years, ' +
+        'profile:profiles!inner(user_id, full_name, role, kyc_status)'
+    )
+    .eq('verification_status', 'approved')
+    .eq('is_available', true);
+
+  if (error) return { data: [], error: error.message };
+
+  const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
+
+  const eligible = rows.filter((row) => {
+    const profile = row.profile as { role?: string; kyc_status?: string } | null;
+    return profile?.role === 'investigator' && profile?.kyc_status === 'approved';
+  });
+
+  return {
+    data: eligible.map((row) => {
+      const profile = row.profile as { user_id: string; full_name: string };
+      return {
+        investigator_id: String(row.id),
+        user_id: profile.user_id,
+        full_name: profile.full_name,
+        specialization: (row.specialization as string[] | null) ?? [],
+        service_area: (row.service_area as string | null) ?? '',
+        rating: Number(row.rating ?? 0),
+        experience_years: Number(row.experience_years ?? 0),
+        total_cases: 0,
+        // No score: this list is unranked, and showing a number would imply a
+        // judgement the engine never made.
+        match_score: 0,
+        breakdown: {},
+      } as InvestigatorMatch;
+    }),
+    error: null,
+  };
+}
