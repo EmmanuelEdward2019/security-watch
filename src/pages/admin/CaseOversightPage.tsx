@@ -32,6 +32,39 @@ const STATUS_OPTIONS = Object.entries(CASE_STATUS_LABELS).map(([value, label]) =
 const CATEGORY_OPTIONS = Object.entries(CASE_CATEGORY_LABELS).map(([value, label]) => ({ value, label }));
 const URGENCY_OPTIONS = Object.entries(CASE_URGENCY_LABELS).map(([value, label]) => ({ value, label }));
 
+/**
+ * Name over email for a person cell.
+ *
+ * The investigator column showed a bare email address. It was already reading
+ * `full_name` — the problem is that `handle_new_user()` falls back to the email
+ * when a signup carries no full_name in its metadata, so for those accounts the
+ * display name IS the address, permanently.
+ *
+ * Showing both is the fix an admin actually needs: the name to recognise who is
+ * on the case, the address to tell two people with the same name apart, or to
+ * contact them. Where the name is only the email fallback there is nothing to
+ * add, so the address is shown once rather than twice.
+ */
+function PersonCell({ person }: { person: { full_name?: string; email?: string } | null }) {
+  const name = person?.full_name?.trim() ?? '';
+  const email = person?.email?.trim() ?? '';
+
+  if (!name && !email) return <span className="text-surface-400">—</span>;
+
+  const nameIsFallback = !name || name.toLowerCase() === email.toLowerCase();
+
+  if (nameIsFallback) {
+    return <span className="text-surface-700">{email || name}</span>;
+  }
+
+  return (
+    <div className="min-w-0 leading-tight">
+      <p className="truncate font-medium text-surface-900">{name}</p>
+      {email && <p className="truncate text-xs text-surface-500">{email}</p>}
+    </div>
+  );
+}
+
 export function CaseOversightPage() {
   const { cases, fetchCases, updateCaseStatus } = useCaseStore();
   const [loading, setLoading] = useState(true);
@@ -198,13 +231,17 @@ export function CaseOversightPage() {
       id: 'complainant',
       header: 'Complainant',
       accessor: (row) => (row.complainant as { full_name?: string })?.full_name,
-      render: (v) => (v != null && v !== '' ? String(v) : '—'),
+      render: (_v, row) => (
+        <PersonCell person={row.complainant as { full_name?: string; email?: string } | null} />
+      ),
     },
     {
       id: 'investigator',
       header: 'Investigator',
       accessor: (row) => (row.investigator as { full_name?: string })?.full_name,
-      render: (v) => (v != null && v !== '' ? String(v) : '—'),
+      render: (_v, row) => (
+        <PersonCell person={row.investigator as { full_name?: string; email?: string } | null} />
+      ),
     },
     {
       id: 'date',
@@ -374,6 +411,13 @@ export function CaseOversightPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium text-surface-900">{match.full_name}</p>
+                        {/* Shown when it adds something. For accounts whose
+                            full_name fell back to the address it would just be
+                            the same string twice. */}
+                        {match.email &&
+                          match.email.toLowerCase() !== match.full_name.toLowerCase() && (
+                            <span className="text-xs text-surface-500">{match.email}</span>
+                          )}
                         {/* Only when the engine actually ranked them. The
                             fallback list is unranked, and "Best match" or
                             "0 pts" there would assert a judgement nothing

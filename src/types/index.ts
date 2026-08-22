@@ -218,6 +218,14 @@ export interface InvestigatorMatch {
   investigator_id: string;
   user_id: string;
   full_name: string;
+  /**
+   * Optional: the engine does not return it, the client fallback does.
+   *
+   * Needed because `full_name` falls back to the email address for accounts
+   * that signed up without one, so a name alone can be ambiguous — or can just
+   * be an address with no way to tell two people apart.
+   */
+  email?: string;
   specialization: string[];
   service_area: string;
   experience_years: number;

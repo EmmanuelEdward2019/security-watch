@@ -177,7 +177,7 @@ export async function listAssignableInvestigators(): Promise<{
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'user_id, full_name, ' +
+      'user_id, full_name, email, ' +
         'investigator:investigators(id, specialization, service_area, rating, ' +
         'experience_years, is_available, verification_status)'
     )
@@ -205,6 +205,7 @@ export async function listAssignableInvestigators(): Promise<{
         investigator_id: String(detail?.id ?? row.user_id),
         user_id: String(row.user_id),
         full_name: String(row.full_name ?? 'Unnamed investigator'),
+        email: row.email ? String(row.email) : undefined,
         specialization: (detail?.specialization as string[] | null) ?? [],
         service_area: (detail?.service_area as string | null) ?? '',
         rating: Number(detail?.rating ?? 0),
