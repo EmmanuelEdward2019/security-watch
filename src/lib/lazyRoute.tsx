@@ -77,10 +77,22 @@ export function armChunkRecovery() {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** A lazy route component carrying the importer that loads it. */
+export type LazyRouteComponent = ReturnType<typeof lazy> & {
+  /**
+   * Runs the underlying dynamic import.
+   *
+   * Exposed so the router can register it for prefetching — React.lazy gives
+   * no way to warm a component from outside, and hovering a nav link is a
+   * reliable signal that its chunk is about to be needed.
+   */
+  preload: () => Promise<unknown>;
+};
+
 export function lazyRoute<T extends ComponentType<unknown>>(
   factory: () => Promise<{ default: T }>
 ) {
-  return lazy(async () => {
+  const component = lazy(async () => {
     let lastError: unknown;
 
     for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
@@ -112,5 +124,8 @@ export function lazyRoute<T extends ComponentType<unknown>>(
     }
 
     throw lastError;
-  });
+  }) as unknown as LazyRouteComponent;
+
+  component.preload = factory;
+  return component;
 }

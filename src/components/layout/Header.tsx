@@ -42,8 +42,11 @@ export function Header({ onMenuClick, userRole }: HeaderProps) {
     navigate('/login');
   };
 
+  // `sticky top-0` did the pinning when the window scrolled. <main> owns the
+  // scroll now and this sits outside it, so sticky would be inert — the header
+  // just needs to refuse to compress.
   return (
-    <header className="sticky top-0 z-40 h-16 bg-white/95 backdrop-blur-sm border-b border-surface-200">
+    <header className="z-40 h-16 shrink-0 bg-white/95 backdrop-blur-sm border-b border-surface-200">
       <div className="h-full px-4 sm:px-6 lg:px-8">
         <div className="flex h-full items-center justify-between gap-4">
           <button

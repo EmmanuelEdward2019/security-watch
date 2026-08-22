@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
+import { prefetchRoute } from '@/lib/prefetchRoute';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
@@ -283,6 +284,15 @@ export function Sidebar({
         <NavLink
           to={item.to}
           onClick={onMobileClose}
+          /*
+            Warm the route's chunk before the click.
+            Pointing at a nav item reliably precedes clicking it, and the gap
+            is usually enough to cover the fetch — so the page is already in
+            memory when it mounts. onFocus covers keyboard navigation, which
+            would otherwise never get the benefit.
+          */
+          onMouseEnter={() => prefetchRoute(item.to)}
+          onFocus={() => prefetchRoute(item.to)}
           className={cn(
             'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
             active
@@ -334,7 +344,10 @@ export function Sidebar({
       <motion.aside
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex flex-col bg-white border-r border-surface-200',
-          'lg:relative lg:z-auto',
+          // Desktop: a full-height column inside the viewport-height shell, so
+          // it is pinned by construction. `shrink-0` stops a long nav list
+          // squeezing it narrower than its declared width.
+          'lg:relative lg:z-auto lg:h-full lg:shrink-0',
           collapsed ? 'lg:w-[72px]' : 'lg:w-64',
           isMobileOpen ? 'w-64' : '-translate-x-full lg:translate-x-0'
         )}

@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
-import { lazyRoute } from '@/lib/lazyRoute';
+import { lazyRoute, type LazyRouteComponent } from '@/lib/lazyRoute';
+import { registerRouteChunk } from '@/lib/prefetchRoute';
 import { RouteErrorBoundary } from '@/components/common/RouteErrorBoundary';
 import { DashboardLayout } from '@/components/layout';
 import { KycGateProvider } from '@/hooks/useKycGate';
@@ -263,3 +264,45 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
+
+/*
+ * Register every lazy route so its chunk can be warmed on hover.
+ *
+ * Walked from the route table rather than annotated per route: there are 71 of
+ * them, and a list maintained by hand would drift the first time someone adds
+ * a page. `page()` wraps each element in <Suspense>, so the lazy component is
+ * the Suspense child.
+ *
+ * Paths in the table are relative to their parent, so the walk rebuilds the
+ * absolute path as it descends — that is what the sidebar's `to` will match.
+ */
+interface WalkableRoute {
+  path?: string;
+  index?: boolean;
+  element?: unknown;
+  children?: WalkableRoute[];
+}
+
+function registerChunks(routes: WalkableRoute[], parent = '') {
+  for (const route of routes) {
+    const full = route.path
+      ? route.path.startsWith('/')
+        ? route.path
+        : `${parent.replace(/\/$/, '')}/${route.path}`
+      : parent;
+
+    const element = route.element as
+      | { props?: { children?: { type?: unknown } } }
+      | undefined;
+    const child = element?.props?.children as { type?: LazyRouteComponent } | undefined;
+    const preload = child?.type?.preload;
+
+    if (typeof preload === 'function' && route.path) {
+      registerRouteChunk(full, preload);
+    }
+
+    if (route.children) registerChunks(route.children, full);
+  }
+}
+
+registerChunks(router.routes as unknown as WalkableRoute[]);
