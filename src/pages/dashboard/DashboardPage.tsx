@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -24,6 +24,10 @@ import {
 } from 'lucide-react';
 import { StatsCard, Card, CardHeader, CardContent, Button } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
+import {
+  fetchDashboardExtras,
+  type DashboardExtras,
+} from '@/services/dashboardStatsService';
 import { useCaseStore } from '@/stores/caseStore';
 import { usePropertyStore } from '@/stores/propertyStore';
 import { useMediaStore } from '@/stores/mediaStore';
@@ -54,6 +58,25 @@ export function DashboardPage() {
   const { properties, fetchProperties } = usePropertyStore();
   const { mediaReports, fetchMediaReports } = useMediaStore();
   const { notifications, fetchNotifications } = useNotificationStore();
+
+  /*
+   * Figures that need their own queries. Kept out of the stores because they
+   * are read once for this screen and nothing else consumes them.
+   */
+  const [extras, setExtras] = useState<DashboardExtras>({});
+
+  useEffect(() => {
+    if (!user?.user_id || user.role === 'admin') return;
+
+    let cancelled = false;
+    void fetchDashboardExtras(user.user_id, user.role).then((result) => {
+      if (!cancelled) setExtras(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.user_id, user?.role]);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -86,6 +109,18 @@ export function DashboardPage() {
    * genuinely have no source yet show "--", which at least says "unknown"
    * rather than asserting nothing happened.
    */
+  /** A figure we have, or a dash. Never a zero we did not measure. */
+  const fig = (v: number | undefined) => (v === undefined ? '--' : v);
+
+  const money = (v: number | undefined, currency = extras.currency ?? 'NGN') =>
+    v === undefined
+      ? '--'
+      : new Intl.NumberFormat('en-NG', {
+          style: 'currency',
+          currency,
+          maximumFractionDigits: 0,
+        }).format(v);
+
   const institutionsVisited = new Set(
     myReports.map((r) => r.institution_id).filter(Boolean)
   ).size;
@@ -186,36 +221,36 @@ export function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatsCard icon={ClipboardList} label="Assigned Cases" value={assignedCases.length} variant="sky" />
           <StatsCard icon={ShieldCheck} label="Under Investigation" value={assignedCases.filter((c) => c.status === 'investigating').length} variant="warning" />
-          <StatsCard icon={DollarSign} label="Pending Payout" value="--" variant="teal" />
+          <StatsCard icon={DollarSign} label="Pending Payout" value={money(extras.pendingEarnings)} variant="teal" />
         </div>
       )}
 
       {user?.role === 'lawyer' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatsCard icon={Scale} label="Legal Cases" value={assignedCases.length} variant="sky" />
-          <StatsCard icon={DollarSign} label="Earnings" value="--" variant="teal" />
+          <StatsCard icon={DollarSign} label="Earnings" value={money(extras.paidEarnings)} variant="teal" />
         </div>
       )}
 
       {user?.role === 'medical_expert' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatsCard icon={Stethoscope} label="Assigned Cases" value={assignedCases.length} variant="sky" />
-          <StatsCard icon={Eye} label="Pending Analysis" value="--" variant="warning" />
+          <StatsCard icon={Eye} label="Pending Analysis" value={fig(extras.pendingAnalyses)} variant="warning" />
         </div>
       )}
 
       {user?.role === 'landlord' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatsCard icon={Home} label="My Properties" value={myProperties.length} variant="violet" />
-          <StatsCard icon={Users} label="Tenant Requests" value="--" variant="warning" />
-          <StatsCard icon={DollarSign} label="Revenue" value="--" variant="teal" />
+          <StatsCard icon={Users} label="Tenant Requests" value={fig(extras.tenantRequests)} variant="warning" />
+          <StatsCard icon={DollarSign} label="Revenue" value={money(extras.revenue)} variant="teal" />
         </div>
       )}
 
       {user?.role === 'tenant' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatsCard icon={Heart} label="Saved Properties" value="--" variant="rose" />
-          <StatsCard icon={FileText} label="My Requests" value="--" variant="sky" />
+          <StatsCard icon={Heart} label="Saved Properties" value={fig(extras.savedProperties)} variant="rose" />
+          <StatsCard icon={FileText} label="My Requests" value={fig(extras.myRequests)} variant="sky" />
         </div>
       )}
 
