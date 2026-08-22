@@ -212,22 +212,59 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Case not found' }, 404, cors);
     }
 
-    // Only approved, available investigators are eligible. The approval flag
-    // itself is admin-controlled (see 004) — it can no longer be self-set.
-    const { data: investigators, error: invError } = await admin
-      .from('investigators')
-      .select('*, profile:profiles!inner(user_id, full_name, role, kyc_status, location)')
-      .eq('verification_status', 'approved')
-      .eq('is_available', true);
+    /*
+     * Eligibility comes from `profiles`, not `investigators`.
+     *
+     * This query used to start at `investigators` with an INNER join to
+     * profiles, requiring verification_status='approved' and
+     * is_available=true on that table. But `investigators` holds a
+     * professional APPLICATION, and someone can hold the investigator role
+     * without ever having filed one — the live system has exactly that. Those
+     * investigators were invisible to matching entirely, so an admin was told
+     * no investigator was available while one was.
+     *
+     * `profiles` is the authority, and the same authority admin_assign_case
+     * uses: it checks role and kyc_status and never reads `investigators`. So
+     * anyone returned here is someone the RPC will accept. The application row
+     * is joined in for scoring detail where it exists.
+     */
+    const { data: candidates, error: invError } = await admin
+      .from('profiles')
+      .select(
+        'user_id, full_name, location, ' +
+          'investigator:investigators(id, specialization, service_area, rating, ' +
+          'experience_years, is_available, verification_status, languages)'
+      )
+      .eq('role', 'investigator')
+      .eq('kyc_status', 'approved');
 
     if (invError) {
       return json({ error: 'Could not load investigators' }, 500, cors);
     }
 
-    const eligible = (investigators ?? []).filter((inv: Record<string, unknown>) => {
-      const profile = inv.profile as { role?: string; kyc_status?: string } | null;
-      return profile?.role === 'investigator' && profile?.kyc_status === 'approved';
-    });
+    // Flatten so scoring sees the shape it expects, with the profile nested.
+    const eligible = (candidates ?? [])
+      .map((row: Record<string, unknown>) => {
+        const raw = row.investigator;
+        const detail = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | null;
+
+        return {
+          ...(detail ?? {}),
+          id: detail?.id ?? row.user_id,
+          user_id: row.user_id,
+          is_available: detail?.is_available,
+          profile: {
+            user_id: row.user_id,
+            full_name: row.full_name,
+            role: 'investigator',
+            kyc_status: 'approved',
+            location: row.location,
+          },
+        } as Record<string, unknown>;
+      })
+      // An explicit false is the person declining work. No application row is
+      // not a refusal — they hold the role and passed verification.
+      .filter((inv) => inv.is_available !== false);
 
     if (eligible.length === 0) {
       return json(

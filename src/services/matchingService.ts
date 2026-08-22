@@ -157,42 +157,63 @@ export async function listAssignableInvestigators(): Promise<{
   data: InvestigatorMatch[];
   error: string | null;
 }> {
+  /*
+   * Sourced from `profiles`, NOT `investigators`.
+   *
+   * That distinction is the bug this function was written with. `investigators`
+   * holds a professional APPLICATION — specialisation, service area, rating —
+   * and someone can hold the investigator role without ever having filed one.
+   * The live system has exactly that: an investigator with role='investigator',
+   * kyc_status='approved' and no `investigators` row at all, who was therefore
+   * invisible to both the matching engine and the first version of this
+   * fallback. The screen said "no investigator has been approved yet" while one
+   * plainly had been.
+   *
+   * `profiles` is the authority, and it is the same authority admin_assign_case
+   * uses: it checks role and kyc_status and never looks at `investigators`. So
+   * anyone listed here is exactly someone the RPC will accept, and the
+   * professional detail is joined in where it happens to exist.
+   */
   const { data, error } = await supabase
-    .from('investigators')
+    .from('profiles')
     .select(
-      'id, user_id, specialization, service_area, rating, experience_years, ' +
-        'profile:profiles!inner(user_id, full_name, role, kyc_status)'
+      'user_id, full_name, ' +
+        'investigator:investigators(id, specialization, service_area, rating, ' +
+        'experience_years, is_available, verification_status)'
     )
-    .eq('verification_status', 'approved')
-    .eq('is_available', true);
+    .eq('role', 'investigator')
+    .eq('kyc_status', 'approved');
 
   if (error) return { data: [], error: error.message };
 
   const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
 
-  const eligible = rows.filter((row) => {
-    const profile = row.profile as { role?: string; kyc_status?: string } | null;
-    return profile?.role === 'investigator' && profile?.kyc_status === 'approved';
-  });
-
   return {
-    data: eligible.map((row) => {
-      const profile = row.profile as { user_id: string; full_name: string };
-      return {
-        investigator_id: String(row.id),
-        user_id: profile.user_id,
-        full_name: profile.full_name,
-        specialization: (row.specialization as string[] | null) ?? [],
-        service_area: (row.service_area as string | null) ?? '',
-        rating: Number(row.rating ?? 0),
-        experience_years: Number(row.experience_years ?? 0),
+    data: rows
+      .map((row) => {
+        // Supabase returns an embedded to-many relation as an array.
+        const raw = row.investigator;
+        const detail = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | null;
+
+        return { row, detail };
+      })
+      // An explicit `is_available = false` is the person saying they are not
+      // taking work. No application row at all is not a refusal — they hold the
+      // role and passed verification — so absence must not exclude them.
+      .filter(({ detail }) => detail == null || detail.is_available !== false)
+      .map(({ row, detail }) => ({
+        investigator_id: String(detail?.id ?? row.user_id),
+        user_id: String(row.user_id),
+        full_name: String(row.full_name ?? 'Unnamed investigator'),
+        specialization: (detail?.specialization as string[] | null) ?? [],
+        service_area: (detail?.service_area as string | null) ?? '',
+        rating: Number(detail?.rating ?? 0),
+        experience_years: Number(detail?.experience_years ?? 0),
         total_cases: 0,
-        // No score: this list is unranked, and showing a number would imply a
-        // judgement the engine never made.
+        // Unranked. A score here would imply a judgement the engine never made.
         match_score: 0,
         breakdown: {},
-      } as InvestigatorMatch;
-    }),
+      })) as InvestigatorMatch[],
     error: null,
   };
 }
