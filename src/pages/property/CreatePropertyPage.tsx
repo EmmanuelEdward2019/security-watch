@@ -189,16 +189,38 @@ export function CreatePropertyPage() {
       // Title documents are keyed by property: only the owner and admins can
       // read them.
       const path = buildObjectPath(id, file.name);
-      const { url, error: docError } = await uploadFile(
+      const { path: storedPath, error: docError } = await uploadFile(
         STORAGE_BUCKETS.PROPERTY_DOCUMENTS,
         path,
         file
       );
-      if (!docError && url) {
+
+      if (!docError && storedPath) {
         await addDocument({
           property_id: id,
-          document_type: file.name.split('.').pop() ?? 'document',
-          file_url: url,
+          /*
+           * `other`, not the file extension.
+           *
+           * This used to store `file.name.split('.').pop()` — so a title deed
+           * was filed as "pdf" and a survey plan as "jpg". An administrator
+           * reviewing the listing saw a list of file formats rather than what
+           * each document actually was, and the type could never match the
+           * vocabulary the rest of the platform uses.
+           *
+           * The type is set properly from the property screen, where the
+           * uploader chooses it. Here it is honestly unknown.
+           */
+          document_type: 'other',
+          /*
+           * The PATH, not a URL.
+           *
+           * property-documents is a private bucket, so uploadFile returns a
+           * SIGNED url — which expires. Storing it meant every document record
+           * created here rotted within the hour and could never be opened
+           * again. It also disagreed with the mobile client, which has always
+           * stored the path.
+           */
+          file_url: storedPath,
           file_name: file.name,
           verified: false,
         });

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { usePropertyStore } from '@/stores/propertyStore';
 import { useAuthStore } from '@/stores/authStore';
+import { PropertyDocuments } from '@/components/property/PropertyDocuments';
 import { PropertyCard } from '@/components/property/PropertyCard';
 import {
   Button,
@@ -314,6 +315,20 @@ export function PropertyDetailPage() {
                 </ul>
               </div>
             )}
+
+            {/*
+              Documents could only be attached while the listing was being
+              created. A landlord who published first, or who was later asked
+              for a Certificate of Occupancy during verification, had no way to
+              add one short of deleting the listing and starting over.
+
+              Renders nothing for a non-owner with no documents — a title deed
+              is not prospective-tenant material.
+            */}
+            <PropertyDocuments
+              propertyId={currentProperty.id}
+              isOwner={user?.user_id === currentProperty.owner_id}
+            />
 
             {/* Owner Card */}
             {owner && (

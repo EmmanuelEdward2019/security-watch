@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Property, PropertyDocument, PropertyRequest } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { supabase, STORAGE_BUCKETS } from '@/lib/supabase';
 
 interface PropertyState {
   properties: Property[];
@@ -27,6 +27,7 @@ interface PropertyState {
   deleteProperty: (id: string) => Promise<{ error: string | null }>;
   fetchDocuments: (propertyId: string) => Promise<void>;
   addDocument: (doc: Partial<PropertyDocument>) => Promise<{ error: string | null }>;
+  deleteDocument: (doc: PropertyDocument) => Promise<{ error: string | null }>;
   fetchRequests: (userId: string, asOwner?: boolean) => Promise<void>;
   createRequest: (request: Partial<PropertyRequest>) => Promise<{ error: string | null }>;
   updateRequest: (id: string, status: 'accepted' | 'rejected') => Promise<{ error: string | null }>;
@@ -160,6 +161,24 @@ export const usePropertyStore = create<PropertyState>((set, get) => ({
   addDocument: async (doc) => {
     const { error } = await supabase.from('property_documents').insert(doc);
     if (error) return { error: error.message };
+    return { error: null };
+  },
+
+  /**
+   * Removes a document and its stored file.
+   *
+   * The row goes first, deliberately. An orphaned object is a storage cost; a
+   * row pointing at a file that no longer exists is a broken document in the
+   * owner's list and in an administrator's verification queue.
+   */
+  deleteDocument: async (doc) => {
+    const { error } = await supabase.from('property_documents').delete().eq('id', doc.id);
+    if (error) return { error: error.message };
+
+    // Best effort — the row is gone either way.
+    await supabase.storage.from(STORAGE_BUCKETS.PROPERTY_DOCUMENTS).remove([doc.file_url]);
+
+    set((state) => ({ documents: state.documents.filter((d) => d.id !== doc.id) }));
     return { error: null };
   },
 
