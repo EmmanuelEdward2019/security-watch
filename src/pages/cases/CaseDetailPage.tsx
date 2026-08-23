@@ -32,6 +32,7 @@ import {
 } from '@/components/ui';
 import { CaseStatusTracker } from '@/components/cases/CaseStatusTracker';
 import { EvidenceTimeline } from '@/components/cases/EvidenceTimeline';
+import { EngagementPanel } from '@/components/cases/EngagementPanel';
 import { uploadFile, generateFileHash, buildObjectPath, STORAGE_BUCKETS } from '@/lib/supabase';
 import type { UploadedFile } from '@/components/ui/FileUpload';
 import {
@@ -205,6 +206,17 @@ export function CaseDetailPage() {
             <h3 className="font-semibold text-surface-900 mb-3">Status Timeline</h3>
             <CaseStatusTracker currentStatus={currentCase.status} />
           </div>
+
+          {/*
+            Booking an engagement notifies the complainant that a deposit is
+            needed and links them here. Without this the flow dead-ended: the
+            case screen knew nothing about the engagement, showed no amount and
+            offered no way to pay.
+          */}
+          <EngagementPanel
+            caseId={currentCase.id}
+            isComplainant={currentCase.complainant_id === user?.user_id}
+          />
         </motion.div>
       ),
     },
