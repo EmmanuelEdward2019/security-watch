@@ -705,14 +705,30 @@ export interface LandlordTransaction {
   created_at: string;
 }
 
+/**
+ * A tranche the platform owes this professional.
+ *
+ * Previously this mirrored the COMPLAINANT'S payment on a case the
+ * professional was assigned to — gross of commission, and not actually owed to
+ * them. It now reads the payout ledger, so `amount` is their share after The
+ * Security Watch's commission and `status` describes the payout, not the
+ * client's card transaction.
+ */
+export type PayoutStatus = 'accrued' | 'approved' | 'released' | 'cancelled';
+
 export interface EarningRecord {
-  payment_id: string;
+  ledger_id: string;
   case_id: string;
   case_title: string;
+  /** The professional's share, net of commission. */
   amount: number;
   currency: string;
-  status: PaymentStatus;
-  purpose: string | null;
+  status: PayoutStatus;
+  /** Which tranche: the mobilisation deposit, the balance, or an adjustment. */
+  reason: 'deposit_share' | 'balance_share' | 'adjustment';
+  /** Bank or Paystack reference, present once released. */
+  reference: string | null;
+  released_at: string | null;
   created_at: string;
 }
 

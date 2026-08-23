@@ -1,89 +1,92 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Clock, CheckCircle, Download, TrendingUp } from 'lucide-react';
 import { format } from 'date-fns';
-import { StatsCard, Card, CardHeader, CardContent, Button, Badge, Spinner } from '@/components/ui';
+import { DollarSign, Clock, CheckCircle, TrendingUp, Download, Landmark } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { StatsCard, Card, CardHeader, CardContent, Button, Badge, Spinner, EmptyState } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
-import { supabase } from '@/lib/supabase';
-import type { Payment, PaymentStatus } from '@/types';
+import { fetchMyEarnings } from '@/services/propertyExtrasService';
+import type { EarningRecord, PayoutStatus } from '@/types';
 
-const STATUS_VARIANT: Record<PaymentStatus, 'success' | 'warning' | 'danger' | 'default'> = {
-  completed: 'success',
-  pending: 'warning',
-  failed: 'danger',
-  refunded: 'default',
+/**
+ * What The Security Watch owes this professional.
+ *
+ * This screen used to query `payments` for every case the user was assigned to
+ * and present those figures as their earnings. That was the complainant's money
+ * — the full catalogue price, gross of commission, and not owed to the
+ * professional at all. An investigator on a ₦150,000 retainer saw "₦150,000
+ * earned" when their actual share was ₦120,000, none of which had been
+ * released.
+ *
+ * It now reads the payout ledger, so every figure is a real obligation: the
+ * professional's share after commission, at a known status, with the transfer
+ * reference once it has been paid.
+ */
+
+const STATUS_VARIANT: Record<PayoutStatus, 'success' | 'warning' | 'danger' | 'default'> = {
+  released: 'success',
+  approved: 'warning',
+  accrued: 'default',
+  cancelled: 'danger',
 };
 
-const STATUS_LABEL: Record<PaymentStatus, string> = {
-  completed: 'Paid',
-  pending: 'Pending',
-  failed: 'Failed',
-  refunded: 'Refunded',
+const STATUS_LABEL: Record<PayoutStatus, string> = {
+  released: 'Paid out',
+  approved: 'Approved',
+  accrued: 'Owed',
+  cancelled: 'Cancelled',
+};
+
+const REASON_LABEL: Record<EarningRecord['reason'], string> = {
+  deposit_share: 'Mobilisation deposit',
+  balance_share: 'Balance on completion',
+  adjustment: 'Adjustment',
 };
 
 export default function EarningsPage() {
   const user = useAuthStore((s) => s.user);
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [entries, setEntries] = useState<EarningRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user) return;
-    loadEarnings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
-  async function loadEarnings() {
+  const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    try {
-      // Fetch cases assigned to this investigator (or lawyer)
-      const caseQuery =
-        user.role === 'lawyer'
-          ? supabase.from('cases').select('id').eq('assigned_lawyer_id', user.user_id)
-          : supabase.from('cases').select('id').eq('assigned_investigator_id', user.user_id);
+    const { earnings } = await fetchMyEarnings();
+    setEntries(earnings);
+    setLoading(false);
+  }, [user]);
 
-      const { data: assignedCases } = await caseQuery;
-      const caseIds = (assignedCases ?? []).map((c) => c.id);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-      if (caseIds.length === 0) {
-        setPayments([]);
-        setLoading(false);
-        return;
-      }
+  const live = entries.filter((e) => e.status !== 'cancelled');
 
-      // Payments made for those cases represent this user's earnings
-      const { data, error } = await supabase
-        .from('payments')
-        .select('*')
-        .in('case_id', caseIds)
-        .order('created_at', { ascending: false });
+  const paidOut = live
+    .filter((e) => e.status === 'released')
+    .reduce((sum, e) => sum + e.amount, 0);
 
-      if (!error && data) setPayments(data as Payment[]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Accrued and approved are both money owed but not yet sent. Approved simply
+  // means an administrator has signed it off for transfer.
+  const owed = live
+    .filter((e) => e.status === 'accrued' || e.status === 'approved')
+    .reduce((sum, e) => sum + e.amount, 0);
 
-  const totalEarned = payments
-    .filter((p) => p.status === 'completed')
-    .reduce((sum, p) => sum + p.amount, 0);
-
-  const pendingPayout = payments
-    .filter((p) => p.status === 'pending')
-    .reduce((sum, p) => sum + p.amount, 0);
-
-  const completedCount = payments.filter((p) => p.status === 'completed').length;
+  const releasedCount = live.filter((e) => e.status === 'released').length;
+  const currency = entries[0]?.currency ?? 'NGN';
 
   const handleExport = () => {
     const rows = [
-      ['Date', 'Description', 'Amount', 'Currency', 'Reference', 'Status'],
-      ...payments.map((p) => [
-        format(new Date(p.created_at), 'yyyy-MM-dd'),
-        p.description,
-        p.amount.toString(),
-        p.currency,
-        p.provider_reference ?? '',
-        p.status,
+      ['Date', 'Case', 'Tranche', 'Amount', 'Currency', 'Status', 'Reference', 'Paid on'],
+      ...entries.map((e) => [
+        format(new Date(e.created_at), 'yyyy-MM-dd'),
+        e.case_title,
+        REASON_LABEL[e.reason],
+        e.amount.toString(),
+        e.currency,
+        STATUS_LABEL[e.status],
+        e.reference ?? '',
+        e.released_at ? format(new Date(e.released_at), 'yyyy-MM-dd') : '',
       ]),
     ];
     const csv = rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
@@ -96,8 +99,6 @@ export default function EarningsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const currency = payments[0]?.currency ?? 'NGN';
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -105,18 +106,25 @@ export default function EarningsPage() {
       transition={{ duration: 0.3 }}
       className="space-y-6"
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-surface-900">Earnings</h1>
-          <p className="text-surface-500 mt-1">
-            Track income from your assigned cases.
+          <p className="mt-1 text-surface-500">
+            Your share of each engagement, after The Security Watch&apos;s commission.
           </p>
         </div>
-        {payments.length > 0 && (
-          <Button variant="outline" size="sm" icon={Download} onClick={handleExport}>
-            Export CSV
-          </Button>
-        )}
+        <div className="flex gap-2">
+          <Link to="/app/payout-account">
+            <Button variant="outline" size="sm" icon={Landmark}>
+              Payout account
+            </Button>
+          </Link>
+          {entries.length > 0 && (
+            <Button variant="outline" size="sm" icon={Download} onClick={handleExport}>
+              Export CSV
+            </Button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -125,73 +133,72 @@ export default function EarningsPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <StatsCard
               icon={DollarSign}
-              label="Total Earned"
-              value={`${currency} ${totalEarned.toLocaleString()}`}
+              label="Paid out"
+              value={`${currency} ${paidOut.toLocaleString()}`}
               variant="success"
             />
             <StatsCard
               icon={Clock}
-              label="Pending Payout"
-              value={`${currency} ${pendingPayout.toLocaleString()}`}
+              label="Owed to you"
+              value={`${currency} ${owed.toLocaleString()}`}
               variant="warning"
             />
             <StatsCard
               icon={CheckCircle}
-              label="Payments Received"
-              value={completedCount}
-              variant="brand"
+              label="Payouts received"
+              value={releasedCount}
+              variant="teal"
             />
           </div>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <h2 className="font-semibold text-surface-900 flex items-center gap-2">
+            <CardHeader>
+              <h2 className="flex items-center gap-2 font-semibold text-surface-900">
                 <TrendingUp size={18} className="text-brand-500" />
-                Payment History
+                Payout history
               </h2>
             </CardHeader>
             <CardContent className="p-0">
-              {payments.length === 0 ? (
-                <div className="py-16 text-center text-surface-500">
-                  <DollarSign size={40} className="mx-auto mb-3 text-surface-300" />
-                  <p className="font-medium">No earnings yet</p>
-                  <p className="text-sm mt-1">
-                    Earnings will appear here once clients make payments for your assigned cases.
-                  </p>
-                </div>
+              {entries.length === 0 ? (
+                <EmptyState
+                  icon={DollarSign}
+                  tint="teal"
+                  title="Nothing owed yet"
+                  description="Once a complainant funds an engagement you have been booked on, your share appears here."
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-surface-100 text-left">
                         <th className="px-6 py-3 font-medium text-surface-500">Date</th>
-                        <th className="px-6 py-3 font-medium text-surface-500">Description</th>
-                        <th className="px-6 py-3 font-medium text-surface-500">Amount</th>
+                        <th className="px-6 py-3 font-medium text-surface-500">Case</th>
+                        <th className="px-6 py-3 font-medium text-surface-500">Tranche</th>
+                        <th className="px-6 py-3 font-medium text-surface-500">Your share</th>
                         <th className="px-6 py-3 font-medium text-surface-500">Reference</th>
                         <th className="px-6 py-3 font-medium text-surface-500">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-surface-100">
-                      {payments.map((p) => (
-                        <tr key={p.id} className="hover:bg-surface-50 transition-colors">
-                          <td className="px-6 py-3 text-surface-600 whitespace-nowrap">
-                            {format(new Date(p.created_at), 'MMM d, yyyy')}
+                    <tbody>
+                      {entries.map((e) => (
+                        <tr key={e.ledger_id} className="border-b border-surface-50 last:border-0">
+                          <td className="whitespace-nowrap px-6 py-3 text-surface-600">
+                            {format(new Date(e.created_at), 'd MMM yyyy')}
                           </td>
-                          <td className="px-6 py-3 text-surface-900 font-medium max-w-xs truncate">
-                            {p.description}
+                          <td className="px-6 py-3 text-surface-900">{e.case_title}</td>
+                          <td className="px-6 py-3 text-surface-600">{REASON_LABEL[e.reason]}</td>
+                          <td className="whitespace-nowrap px-6 py-3 font-medium tabular-nums text-surface-900">
+                            {e.currency} {e.amount.toLocaleString()}
                           </td>
-                          <td className="px-6 py-3 text-surface-900 font-semibold whitespace-nowrap">
-                            {p.currency} {p.amount.toLocaleString()}
-                          </td>
-                          <td className="px-6 py-3 text-surface-500 font-mono text-xs truncate max-w-[120px]">
-                            {p.provider_reference ?? '—'}
+                          <td className="px-6 py-3 font-mono text-xs text-surface-500">
+                            {e.reference ?? '—'}
                           </td>
                           <td className="px-6 py-3">
-                            <Badge variant={STATUS_VARIANT[p.status]} size="sm" dot>
-                              {STATUS_LABEL[p.status]}
+                            <Badge variant={STATUS_VARIANT[e.status]}>
+                              {STATUS_LABEL[e.status]}
                             </Badge>
                           </td>
                         </tr>

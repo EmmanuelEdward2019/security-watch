@@ -165,13 +165,15 @@ export async function fetchMyEarnings(): Promise<{
   if (error) return { earnings: [], error: error.message };
 
   const earnings = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
-    payment_id: r.payment_id as string,
+    ledger_id: r.ledger_id as string,
     case_id: r.case_id as string,
     case_title: r.case_title as string,
     amount: Number(r.amount ?? 0),
     currency: r.currency as string,
     status: r.status as EarningRecord['status'],
-    purpose: (r.purpose as string) ?? null,
+    reason: r.reason as EarningRecord['reason'],
+    reference: (r.reference as string) ?? null,
+    released_at: (r.released_at as string) ?? null,
     created_at: r.created_at as string,
   }));
 

@@ -92,6 +92,7 @@ const PublishPage = lazyRoute(() => import('@/pages/media/PublishPage'));
 // ── Role-specific ─────────────────────────────────────────────────────────────
 const AvailabilityPage = lazyRoute(() => import('@/pages/investigator/AvailabilityPage'));
 const EarningsPage = lazyRoute(() => import('@/pages/investigator/EarningsPage'));
+const PayoutAccountPage = lazyRoute(() => import('@/pages/investigator/PayoutAccountPage'));
 const LegalDocumentsPage = lazyRoute(() => import('@/pages/lawyer/LegalDocumentsPage'));
 const EvidenceAnalysisPage = lazyRoute(() => import('@/pages/medical/EvidenceAnalysisPage'));
 const MessagingPage = lazyRoute(() => import('@/pages/messaging/MessagingPage').then((m) => ({ default: m.MessagingPage })));
@@ -214,6 +215,7 @@ export const router = createBrowserRouter([
           { path: 'verification', element: page(<AgentVerificationPage />) },
           { path: 'availability', element: page(<AvailabilityPage />) },
           { path: 'earnings', element: page(<EarningsPage />) },
+          { path: 'payout-account', element: page(<PayoutAccountPage />) },
           { path: 'legal-documents', element: page(<LegalDocumentsPage />) },
           { path: 'evidence-analysis', element: page(<EvidenceAnalysisPage />) },
 

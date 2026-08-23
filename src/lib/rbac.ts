@@ -69,7 +69,10 @@ const ROUTE_PERMISSIONS: { path: string; roles: UserRole[]; exact?: boolean }[] 
     ],
   },
   { path: '/app/availability', roles: ['investigator'] },
-  { path: '/app/earnings', roles: ['investigator', 'lawyer'] },
+  { path: '/app/earnings', roles: ['investigator', 'lawyer', 'medical_expert'] },
+  // Where a payout is sent. Same three roles that can be booked on an
+  // engagement — nobody else has anything to be paid.
+  { path: '/app/payout-account', roles: ['investigator', 'lawyer', 'medical_expert'] },
   { path: '/app/legal-documents', roles: ['lawyer'] },
   { path: '/app/evidence-analysis', roles: ['medical_expert'] },
 

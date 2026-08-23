@@ -194,6 +194,39 @@ Deno.serve(async (req: Request) => {
       link: '/app/payments/history',
     });
 
+    /*
+     * A deposit against a booked engagement mobilises the professional.
+     *
+     * This is what the filing screen has been promising all along — "the fee
+     * activates the investigation" — and what the webhook never did. The RPC
+     * flips the engagement to funded, accrues the professional's share of the
+     * deposit on the payout ledger, and notifies them and the administrators.
+     *
+     * It is idempotent and returns null when no engagement is awaiting this
+     * payment, so a Paystack retry cannot accrue a second tranche and an
+     * ordinary purchase simply passes through.
+     */
+    if (payment.case_id) {
+      const { error: settleError } = await admin.rpc('settle_engagement_deposit', {
+        p_payment_id: payment.id,
+      });
+
+      if (settleError) {
+        // The money is confirmed either way; the payment must still be marked
+        // settled. Log loudly — an unaccrued deposit is a person owed money
+        // with no record of it.
+        console.error('[payments-webhook] settle_engagement_deposit failed:', settleError.message);
+        await admin.from('audit_logs').insert({
+          user_id: payment.payer_id,
+          action: 'engagement_deposit_settle_failed',
+          resource_type: 'payment',
+          resource_id: payment.id,
+          details: { reference, error: settleError.message },
+          severity: 'critical',
+        });
+      }
+    }
+
     // A verification purchase moves the property into the admin review queue.
     if (payment.purpose === 'property_verification' && payment.property_id) {
       await admin
