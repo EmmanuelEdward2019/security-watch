@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { UserPlus, Eye, Sparkles } from 'lucide-react';
+import { UserPlus, Eye, Sparkles, Briefcase } from 'lucide-react';
 import {
   DataTable,
   Badge,
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui';
 import type { Column } from '@/components/ui';
 import { useCaseStore } from '@/stores/caseStore';
+import { EngagementModal } from '@/components/admin/EngagementModal';
 import {
   suggestInvestigators,
   assignCaseProfessional,
@@ -75,6 +76,7 @@ export function CaseOversightPage() {
   const [dateTo, setDateTo] = useState('');
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showEngagementModal, setShowEngagementModal] = useState(false);
   const [matches, setMatches] = useState<InvestigatorMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [matchNote, setMatchNote] = useState<string | null>(null);
@@ -361,12 +363,36 @@ export function CaseOversightPage() {
                 ))}
               </select>
             </div>
-            <Button onClick={() => setShowAssignModal(true)} icon={UserPlus}>
-              Assign Investigator
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setShowAssignModal(true)} icon={UserPlus}>
+                Assign Investigator
+              </Button>
+              {/*
+                Separate from assignment on purpose. Assigning grants access to
+                the case file; booking creates an obligation to pay someone.
+                Merging them would mean an administrator could not bring a
+                second opinion onto a case without committing to a fee.
+              */}
+              <Button
+                variant="secondary"
+                onClick={() => setShowEngagementModal(true)}
+                icon={Briefcase}
+              >
+                Book engagement
+              </Button>
+            </div>
           </div>
         )}
       </Modal>
+
+      {selectedCase && (
+        <EngagementModal
+          caseId={selectedCase.id}
+          isOpen={showEngagementModal}
+          onClose={() => setShowEngagementModal(false)}
+          onBooked={() => void loadCases()}
+        />
+      )}
 
       <Modal
         isOpen={showAssignModal}

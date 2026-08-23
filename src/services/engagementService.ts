@@ -161,3 +161,67 @@ export async function releasePayout(
 
   return { error: error?.message ?? null };
 }
+
+export interface BookableProfessional {
+  user_id: string;
+  full_name: string;
+  email: string | null;
+  role: 'investigator' | 'lawyer' | 'medical_expert';
+  /** True once they have somewhere for a payout to go. */
+  has_payout_account: boolean;
+}
+
+/**
+ * Professionals who can be booked in a given role.
+ *
+ * Sourced from `profiles`, matching the authority `admin_create_engagement`
+ * checks — role and kyc_status. Reading `investigators` instead would miss
+ * anyone holding the role without a professional application on file, which is
+ * a real state on this platform and the exact bug that made the assign modal
+ * claim no investigator existed when one did.
+ *
+ * `has_payout_account` is surfaced so an administrator knows before booking
+ * that a payout will have nowhere to go. It is deliberately not a blocker:
+ * the work can be agreed now and the bank details added before the money moves.
+ */
+export async function listBookableProfessionals(
+  role: BookableProfessional['role']
+): Promise<{ professionals: BookableProfessional[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('user_id, full_name, email, role, payout:payout_accounts(user_id)')
+    .eq('role', role)
+    .eq('kyc_status', 'approved')
+    .order('full_name');
+
+  if (error) return { professionals: [], error: error.message };
+
+  return {
+    professionals: (data ?? []).map((r) => {
+      const raw = (r as Record<string, unknown>).payout;
+      const payout = Array.isArray(raw) ? raw[0] : raw;
+
+      return {
+        user_id: String(r.user_id),
+        full_name: String(r.full_name ?? 'Unnamed'),
+        email: (r.email as string) ?? null,
+        role,
+        has_payout_account: payout != null,
+      };
+    }),
+    error: null,
+  };
+}
+
+/** The split an engagement would create, computed the same way the RPC does. */
+export function previewSplit(service: BookableService, depositRate: number) {
+  // round() to 2dp on the commission, then subtract — matching the SQL exactly,
+  // so what the administrator is shown is what gets written.
+  const commission = Math.round(service.amount * service.commission_rate * 100) / 100;
+  const professional = service.amount - commission;
+  const deposit = Math.round(service.amount * depositRate * 100) / 100;
+  const depositProfessionalShare =
+    Math.round(deposit * (1 - service.commission_rate) * 100) / 100;
+
+  return { commission, professional, deposit, depositProfessionalShare };
+}
