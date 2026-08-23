@@ -107,6 +107,7 @@ const VerificationPage = lazyRoute(() => import('@/pages/admin/VerificationPage'
 const KycReviewPage = lazyRoute(() => import('@/pages/admin/KycReviewPage'));
 const MediaApprovalsPage = lazyRoute(() => import('@/pages/admin/MediaApprovalsPage').then((m) => ({ default: m.MediaApprovalsPage })));
 const PaymentMonitoringPage = lazyRoute(() => import('@/pages/admin/PaymentMonitoringPage').then((m) => ({ default: m.PaymentMonitoringPage })));
+const PayoutsPage = lazyRoute(() => import('@/pages/admin/PayoutsPage'));
 const AnalyticsPage = lazyRoute(() => import('@/pages/admin/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })));
 const PricingControlPage = lazyRoute(() => import('@/pages/admin/PricingControlPage'));
 const InstitutionReportsPage = lazyRoute(() => import('@/pages/admin/InstitutionReportsPage'));
@@ -255,6 +256,7 @@ export const router = createBrowserRouter([
           { path: 'admin/media/library', element: page(<ContentLibraryPage />) },
           { path: 'admin/media/publish', element: page(<PublishPage />) },
           { path: 'admin/payments', element: page(<PaymentMonitoringPage />) },
+          { path: 'admin/payouts', element: page(<PayoutsPage />) },
           { path: 'admin/pricing', element: page(<PricingControlPage />) },
           { path: 'admin/analytics', element: page(<AnalyticsPage />) },
           { path: 'admin/institution-reports', element: page(<InstitutionReportsPage />) },

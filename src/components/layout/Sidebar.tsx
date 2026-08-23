@@ -39,6 +39,7 @@ import {
   Heart,
   BookOpen,
   Sliders,
+  Banknote,
   FolderOpen,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
@@ -225,6 +226,7 @@ const roleNavSections: Record<UserRole, NavSection[]> = {
       title: 'Finance',
       items: [
         { to: '/app/admin/payments', label: 'Payments', icon: CreditCard },
+        { to: '/app/admin/payouts', label: 'Payouts', icon: Banknote },
         { to: '/app/admin/pricing', label: 'Pricing Control', icon: Sliders },
         { to: '/app/admin/analytics', label: 'Analytics', icon: BarChart3 },
       ],

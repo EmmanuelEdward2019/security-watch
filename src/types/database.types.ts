@@ -180,6 +180,108 @@ export type Database = {
           },
         ]
       }
+      case_engagements: {
+        Row: {
+          case_id: string
+          commission_amount: number
+          commission_rate: number
+          created_at: string
+          created_by: string
+          currency: string
+          deposit_amount: number
+          deposit_paid_at: string | null
+          deposit_payment_id: string | null
+          deposit_rate: number
+          id: string
+          note: string | null
+          professional_amount: number
+          professional_id: string
+          professional_role: string
+          service_key: string
+          status: string
+          total_amount: number
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          commission_amount: number
+          commission_rate: number
+          created_at?: string
+          created_by: string
+          currency?: string
+          deposit_amount: number
+          deposit_paid_at?: string | null
+          deposit_payment_id?: string | null
+          deposit_rate?: number
+          id?: string
+          note?: string | null
+          professional_amount: number
+          professional_id: string
+          professional_role: string
+          service_key: string
+          status?: string
+          total_amount: number
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          commission_amount?: number
+          commission_rate?: number
+          created_at?: string
+          created_by?: string
+          currency?: string
+          deposit_amount?: number
+          deposit_paid_at?: string | null
+          deposit_payment_id?: string | null
+          deposit_rate?: number
+          id?: string
+          note?: string | null
+          professional_amount?: number
+          professional_id?: string
+          professional_role?: string
+          service_key?: string
+          status?: string
+          total_amount?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_engagements_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_engagements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "case_engagements_deposit_payment_id_fkey"
+            columns: ["deposit_payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_engagements_professional_id_fkey"
+            columns: ["professional_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "case_engagements_service_key_fkey"
+            columns: ["service_key"]
+            isOneToOne: false
+            referencedRelation: "service_prices"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       cases: {
         Row: {
           assigned_expert_id: string | null
@@ -871,6 +973,68 @@ export type Database = {
           },
         ]
       }
+      media_library: {
+        Row: {
+          captured_at: string | null
+          created_at: string
+          duration_seconds: number | null
+          file_hash: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          gps_latitude: number | null
+          gps_longitude: number | null
+          id: string
+          media_kind: string
+          note: string | null
+          owner_id: string
+          source: string
+        }
+        Insert: {
+          captured_at?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          file_hash: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          gps_latitude?: number | null
+          gps_longitude?: number | null
+          id?: string
+          media_kind: string
+          note?: string | null
+          owner_id: string
+          source?: string
+        }
+        Update: {
+          captured_at?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          file_hash?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          gps_latitude?: number | null
+          gps_longitude?: number | null
+          id?: string
+          media_kind?: string
+          note?: string | null
+          owner_id?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_library_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       media_reports: {
         Row: {
           created_at: string
@@ -1105,6 +1269,130 @@ export type Database = {
           },
         ]
       }
+      payout_accounts: {
+        Row: {
+          account_name: string
+          account_number: string
+          bank_code: string | null
+          bank_name: string
+          created_at: string
+          recipient_code: string | null
+          updated_at: string
+          user_id: string
+          verified_at: string | null
+        }
+        Insert: {
+          account_name: string
+          account_number: string
+          bank_code?: string | null
+          bank_name: string
+          created_at?: string
+          recipient_code?: string | null
+          updated_at?: string
+          user_id: string
+          verified_at?: string | null
+        }
+        Update: {
+          account_name?: string
+          account_number?: string
+          bank_code?: string | null
+          bank_name?: string
+          created_at?: string
+          recipient_code?: string | null
+          updated_at?: string
+          user_id?: string
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payout_accounts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      payout_ledger: {
+        Row: {
+          amount: number
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          currency: string
+          engagement_id: string
+          id: string
+          note: string | null
+          professional_id: string
+          reason: string
+          released_at: string | null
+          released_by: string | null
+          status: string
+          transfer_reference: string | null
+        }
+        Insert: {
+          amount: number
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          currency?: string
+          engagement_id: string
+          id?: string
+          note?: string | null
+          professional_id: string
+          reason: string
+          released_at?: string | null
+          released_by?: string | null
+          status?: string
+          transfer_reference?: string | null
+        }
+        Update: {
+          amount?: number
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          currency?: string
+          engagement_id?: string
+          id?: string
+          note?: string | null
+          professional_id?: string
+          reason?: string
+          released_at?: string | null
+          released_by?: string | null
+          status?: string
+          transfer_reference?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payout_ledger_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "payout_ledger_engagement_id_fkey"
+            columns: ["engagement_id"]
+            isOneToOne: false
+            referencedRelation: "case_engagements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payout_ledger_professional_id_fkey"
+            columns: ["professional_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "payout_ledger_released_by_fkey"
+            columns: ["released_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       performance_scores: {
         Row: {
           cleanliness: number
@@ -1171,6 +1459,7 @@ export type Database = {
           full_name: string
           id: string
           kyc_status: string
+          kyc_submitted_at: string | null
           location: string | null
           phone: string | null
           requested_role: string | null
@@ -1187,6 +1476,7 @@ export type Database = {
           full_name: string
           id?: string
           kyc_status?: string
+          kyc_submitted_at?: string | null
           location?: string | null
           phone?: string | null
           requested_role?: string | null
@@ -1203,6 +1493,7 @@ export type Database = {
           full_name?: string
           id?: string
           kyc_status?: string
+          kyc_submitted_at?: string | null
           location?: string | null
           phone?: string | null
           requested_role?: string | null
@@ -1531,11 +1822,13 @@ export type Database = {
       service_prices: {
         Row: {
           amount: number
+          commission_rate: number
           created_at: string
           currency: string
           description: string | null
           id: string
           is_active: boolean
+          is_platform_fee: boolean
           key: string
           label: string
           module: string
@@ -1546,11 +1839,13 @@ export type Database = {
         }
         Insert: {
           amount: number
+          commission_rate?: number
           created_at?: string
           currency?: string
           description?: string | null
           id?: string
           is_active?: boolean
+          is_platform_fee?: boolean
           key: string
           label: string
           module: string
@@ -1561,11 +1856,13 @@ export type Database = {
         }
         Update: {
           amount?: number
+          commission_rate?: number
           created_at?: string
           currency?: string
           description?: string | null
           id?: string
           is_active?: boolean
+          is_platform_fee?: boolean
           key?: string
           label?: string
           module?: string
@@ -1620,6 +1917,17 @@ export type Database = {
           user_id: string
         }[]
       }
+      admin_create_engagement: {
+        Args: {
+          p_case_id: string
+          p_deposit_rate?: number
+          p_note?: string
+          p_professional_id: string
+          p_role: string
+          p_service_key: string
+        }
+        Returns: string
+      }
       admin_kyc_application: {
         Args: { p_investigator_id: string }
         Returns: Json
@@ -1656,6 +1964,10 @@ export type Database = {
         }[]
       }
       admin_platform_stats: { Args: never; Returns: Json }
+      admin_release_payout: {
+        Args: { p_ledger_id: string; p_note?: string; p_reference: string }
+        Returns: undefined
+      }
       admin_resolve_verification_request: {
         Args: { p_notes?: string; p_request_id: string; p_status: string }
         Returns: undefined
@@ -1692,6 +2004,10 @@ export type Database = {
       append_custody_entry: {
         Args: { p_action: string; p_evidence_id: string; p_notes?: string }
         Returns: undefined
+      }
+      attach_library_item_to_case: {
+        Args: { p_case_id: string; p_description?: string; p_item_id: string }
+        Returns: string
       }
       can_read_media_object: { Args: { p_name: string }; Returns: boolean }
       create_conversation: {
@@ -1764,8 +2080,10 @@ export type Database = {
           case_title: string
           created_at: string
           currency: string
-          payment_id: string
-          purpose: string
+          ledger_id: string
+          reason: string
+          reference: string
+          released_at: string
           status: string
         }[]
       }
@@ -1798,10 +2116,28 @@ export type Database = {
           title: string
         }[]
       }
+      reap_unconfirmed_signups: {
+        Args: { p_older_than?: string }
+        Returns: number
+      }
       request_account_deletion: { Args: { p_reason?: string }; Returns: string }
+      settle_engagement_deposit: {
+        Args: { p_payment_id: string }
+        Returns: string
+      }
       shares_context_with: { Args: { p_user_id: string }; Returns: boolean }
       storage_uuid_prefix: { Args: { p_name: string }; Returns: string }
       submit_kyc_for_review: { Args: never; Returns: undefined }
+      submit_library_item_to_admin: {
+        Args: {
+          p_description: string
+          p_institution_id: string
+          p_item_id: string
+          p_tags?: string[]
+          p_title: string
+        }
+        Returns: string
+      }
       tsw_elevate: { Args: never; Returns: undefined }
       tsw_is_elevated: { Args: never; Returns: boolean }
       update_case_status: {

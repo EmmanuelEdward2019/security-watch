@@ -100,6 +100,10 @@ const ROUTE_PERMISSIONS: { path: string; roles: UserRole[]; exact?: boolean }[] 
 
   // ── Admin ─────────────────────────────────────────────────────
   { path: '/app/admin', roles: ['admin'] },
+  // Covered by the /app/admin prefix already, but listed so the payout
+  // surface is explicit in the access table — it is the one screen that
+  // records money leaving the platform.
+  { path: '/app/admin/payouts', roles: ['admin'] },
 ];
 
 export function isRouteAllowed(pathname: string, role: UserRole): boolean {
