@@ -28,6 +28,8 @@
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.admin_kyc_queue(p_status TEXT DEFAULT 'pending')
+-- OUT parameter names match the live function exactly. CREATE OR REPLACE
+-- cannot rename them, and the admin client reads these keys.
 RETURNS TABLE (
   investigator_id  UUID,
   user_id          UUID,
@@ -38,10 +40,10 @@ RETURNS TABLE (
   requested_role   TEXT,
   verification_status TEXT,
   submitted_at     TIMESTAMPTZ,
-  days_waiting     INT,
+  waiting_days     INT,
   document_count   BIGINT,
   guarantor_count  BIGINT,
-  has_id_document  BOOLEAN,
+  has_id           BOOLEAN,
   has_summary      BOOLEAN,
   is_complete      BOOLEAN
 )
