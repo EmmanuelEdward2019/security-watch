@@ -12,6 +12,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { StatsCard, Card, CardHeader, CardContent, Button } from '@/components/ui';
+import { StuckQueues } from '@/components/admin/StuckQueues';
 import {
   LineChart,
   Line,
@@ -145,6 +146,13 @@ export function AdminDashboard() {
       className="space-y-6"
     >
       <h1 className="text-2xl font-bold text-surface-900">Admin Dashboard</h1>
+
+      {/*
+        Placed above the counters deliberately. The figures below say how much
+        exists; this says what is waiting on someone — which is the thing an
+        administrator opens this page to find out.
+      */}
+      <StuckQueues />
 
       {security && security.guardViolations24h > 0 && (
         <div className="flex items-start gap-3 rounded-xl border border-accent-200 bg-accent-50 p-4">
