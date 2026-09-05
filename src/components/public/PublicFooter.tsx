@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { AppStoreBadges } from './AppStoreBadges';
 import { Mail, Phone } from 'lucide-react';
 
 const footerLinks = {
@@ -51,6 +52,10 @@ export function PublicFooter() {
                 <Phone className="w-4 h-4" /> +234 800 000 0000
               </a>
             </div>
+
+            {/* Placeholders until the listings are live — see AppStoreBadges
+                for why these are not the official store lockups. */}
+            <AppStoreBadges className="mt-6" tone="dark" />
           </div>
           {Object.entries(footerLinks).map(([title, links]) => (
             <div key={title}>

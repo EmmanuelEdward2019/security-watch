@@ -3,6 +3,7 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Search, Home, CheckCircle, ArrowRight, Eye, Shield } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { AppStoreBadges } from '@/components/public/AppStoreBadges';
 import { PublicNav, PublicFooter, ScrollReveal, ParallaxSection } from '@/components/public';
 import {
   LandingHero,
@@ -201,6 +202,35 @@ export default function LandingPage() {
               </Button>
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/*
+        Mobile apps, honestly framed.
+
+        Says "coming soon" rather than showing store badges, because the
+        listings do not exist yet — see AppStoreBadges. Placed after the
+        services strip so it reads as a next step rather than competing with
+        the primary calls to action above it.
+      */}
+      <section className="border-t border-surface-200 bg-white py-16">
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 px-4 text-center">
+          <div>
+            <h2 className="text-2xl font-bold text-surface-900 sm:text-3xl">
+              Report from anywhere
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-surface-600">
+              The Security Watch mobile app lets you file a case, capture evidence with
+              GPS and a timestamp, and follow every stage from your phone. Coming to
+              iOS and Android.
+            </p>
+          </div>
+
+          <AppStoreBadges tone="light" className="justify-center" />
+
+          <p className="text-xs text-surface-400">
+            Everything on the app is available on this site today.
+          </p>
         </div>
       </section>
 
