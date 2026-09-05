@@ -17,6 +17,10 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui';
 import { useCaseStore } from '@/stores/caseStore';
+import {
+  buildCustodyCertificate,
+  openCustodyCertificate,
+} from '@/services/custodyExport';
 import type { Evidence, CustodyLog } from '@/types';
 import { cn } from '@/utils/cn';
 
@@ -49,6 +53,11 @@ export interface EvidenceTimelineProps {
   evidence: Evidence[];
   uploaderNames?: Record<string, string>;
   className?: string;
+  /** Printed on the custody certificate so it identifies its own subject. */
+  caseTitle?: string;
+  caseId?: string;
+  /** Who is issuing — recorded on the document. */
+  issuedBy?: string;
 }
 
 /**
@@ -62,6 +71,9 @@ export function EvidenceTimeline({
   evidence,
   uploaderNames = {},
   className,
+  caseTitle = 'Untitled case',
+  caseId = '',
+  issuedBy = 'The Security Watch',
 }: EvidenceTimelineProps) {
   return (
     <div className={cn('relative', className)}>
@@ -75,6 +87,9 @@ export function EvidenceTimeline({
             item={item}
             index={index}
             uploaderName={uploaderNames[item.uploaded_by] ?? 'Unknown'}
+            caseTitle={caseTitle}
+            caseId={caseId}
+            issuedBy={issuedBy}
           />
         ))}
       </div>
@@ -84,11 +99,21 @@ export function EvidenceTimeline({
 
 interface EvidenceTimelineItemProps {
   item: Evidence;
+  caseTitle: string;
+  caseId: string;
+  issuedBy: string;
   index: number;
   uploaderName: string;
 }
 
-function EvidenceTimelineItem({ item, index, uploaderName }: EvidenceTimelineItemProps) {
+function EvidenceTimelineItem({
+  item,
+  index,
+  uploaderName,
+  caseTitle,
+  caseId,
+  issuedBy,
+}: EvidenceTimelineItemProps) {
   const [custodyExpanded, setCustodyExpanded] = useState(false);
   const [opening, setOpening] = useState(false);
   const [integrity, setIntegrity] = useState<boolean | null>(null);
@@ -96,6 +121,20 @@ function EvidenceTimelineItem({ item, index, uploaderName }: EvidenceTimelineIte
 
   const Icon = FILE_ICONS[fileIconKey(item.file_type)];
   const hasCustody = item.chain_of_custody?.length > 0;
+
+  const handleCertificate = () => {
+    const html = buildCustodyCertificate({
+      evidence: item,
+      caseTitle,
+      caseId,
+      issuedBy,
+      verifiedNow: integrity,
+    });
+
+    if (!openCustodyCertificate(html)) {
+      toast.error('Allow pop-ups for this site to open the certificate.');
+    }
+  };
 
   const handleOpen = async () => {
     setOpening(true);
@@ -176,6 +215,22 @@ function EvidenceTimelineItem({ item, index, uploaderName }: EvidenceTimelineIte
                   onClick={() => void handleOpen()}
                 >
                   Open &amp; verify
+                </Button>
+
+                {/*
+                  The integrity record is only useful where it matters — with a
+                  lawyer, an insurer, a court — and until now it existed solely
+                  inside this screen. `integrity` is passed through so the
+                  document states whether the file was re-verified at the moment
+                  it was issued, rather than implying a check that never ran.
+                */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={FileText}
+                  onClick={handleCertificate}
+                >
+                  Custody certificate
                 </Button>
 
                 {integrity === true && (

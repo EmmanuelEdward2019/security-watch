@@ -269,8 +269,16 @@ export function CaseDetailPage() {
               </motion.div>
             )}
           </AnimatePresence>
+          {/* Case context so a custody certificate identifies its own subject,
+              and the issuer so the document records who produced it. */}
           {evidence.length > 0 ? (
-            <EvidenceTimeline evidence={evidence} uploaderNames={uploaderNames} />
+            <EvidenceTimeline
+              evidence={evidence}
+              uploaderNames={uploaderNames}
+              caseTitle={currentCase.title}
+              caseId={currentCase.id}
+              issuedBy={user?.full_name ?? user?.email ?? 'The Security Watch'}
+            />
           ) : (
             <EmptyState
               title="No evidence yet"
