@@ -32,8 +32,15 @@ export function PublicFooter() {
   return (
     <footer className="bg-surface-900 text-surface-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 lg:gap-12">
-          <div className="col-span-2 md:col-span-4 lg:col-span-1">
+        {/*
+          Six columns on desktop, not five. The brand column needs two so the
+          store badges sit side by side, and there are four link groups — at
+          five columns wide that totalled six and pushed a group onto a second
+          row.
+        */}
+        <div className="grid grid-cols-2 gap-8 md:grid-cols-4 lg:grid-cols-6 lg:gap-12">
+          {/* Two columns wide, so the store badges fit on one row. */}
+          <div className="col-span-2 md:col-span-4 lg:col-span-2">
             <Link to="/" className="flex items-center gap-3 mb-4">
               <img src="/assets/logo.png" alt="Logo" className="h-12 w-12 object-contain" />
               <div>

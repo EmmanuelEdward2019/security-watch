@@ -56,24 +56,34 @@ export function AppStoreBadges({ className, tone = 'dark' }: AppStoreBadgesProps
   const caption = tone === 'dark' ? 'text-surface-500' : 'text-surface-400';
 
   return (
-    <div className={cn('flex flex-wrap gap-3', className)}>
+    /*
+      Wraps only on the narrowest screens. From `sm` up the pair stays on one
+      row — two badges stacked vertically reads as a list of options rather
+      than "available on both".
+    */
+    <div className={cn('flex flex-wrap gap-3 sm:flex-nowrap', className)}>
       {[
-        { key: 'ios', mark: <AppleMark className="h-6 w-6" />, name: 'iOS' },
-        { key: 'android', mark: <PlayMark className="h-6 w-6" />, name: 'Android' },
+        { key: 'ios', mark: <AppleMark className="h-6 w-6 shrink-0" />, name: 'iOS' },
+        { key: 'android', mark: <PlayMark className="h-6 w-6 shrink-0" />, name: 'Android' },
       ].map((platform) => (
         <span
           key={platform.key}
           className={cn(
-            'inline-flex items-center gap-3 rounded-xl border px-4 py-2.5',
+            // shrink-0 on the mark, min-w-0 on the text: the badge narrows by
+            // squeezing its label, never by clipping the platform logo, which
+            // is the part that identifies it at a glance.
+            'inline-flex min-w-0 items-center gap-3 rounded-xl border px-4 py-2.5',
             shell
           )}
         >
           {platform.mark}
-          <span className="leading-tight">
-            <span className={cn('block text-[10px] uppercase tracking-wide', caption)}>
+          <span className="min-w-0 leading-tight">
+            <span
+              className={cn('block whitespace-nowrap text-[10px] uppercase tracking-wide', caption)}
+            >
               Coming soon on
             </span>
-            <span className="block text-sm font-semibold">{platform.name}</span>
+            <span className="block whitespace-nowrap text-sm font-semibold">{platform.name}</span>
           </span>
         </span>
       ))}
