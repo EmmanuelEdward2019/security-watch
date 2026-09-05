@@ -94,6 +94,26 @@ verify_jwt = false
 # x-paystack-signature HMAC-SHA512 over the raw body. No fallback.
 verify_jwt = false
 
+[functions.push-dispatch]
+# Invoked by a scheduler, not a browser and not a signed-in user, so there is
+# no JWT to verify. Authenticated by the PUSH_DISPATCH_SECRET header instead,
+# compared in constant time. Without that secret set the function refuses to
+# run at all rather than sweeping unauthenticated.
+verify_jwt = false
+
+[functions.custodian-sweep]
+# Scheduler-invoked, like push-dispatch. Authenticated by CUSTODIAN_SWEEP_SECRET
+# in constant time; refuses to run at all if that secret is unset, because this
+# function is the one that discloses case files.
+verify_jwt = false
+
+[functions.evidence-grant]
+# Called by someone with no account holding a grant link — a lawyer, an
+# insurer, an officer. There is no JWT to verify by definition; the bearer
+# token in the request body IS the credential, and it is validated in the
+# database against a stored hash.
+verify_jwt = false
+
 [functions.public-enquiry]
 # Anonymous public forms (Fountain Source, Contact). Rate-limited per email,
 # fixed templates, recipient is always the address just recorded.
