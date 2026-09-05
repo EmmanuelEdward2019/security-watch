@@ -15,8 +15,16 @@ interface NavLink {
   children?: NavChild[];
 }
 
+/*
+ * No "Home" entry. The wordmark to the left of this nav already goes home —
+ * that is the convention everywhere — so the slot was costing a row of
+ * wrapping for a link people already know how to reach.
+ *
+ * About leads instead: it is the first thing someone assessing whether to
+ * trust a platform like this actually wants.
+ */
 const navLinks: NavLink[] = [
-  { to: '/', label: 'Home' },
+  { to: '/about', label: 'About' },
   {
     label: 'Services',
     children: [
@@ -44,7 +52,6 @@ const navLinks: NavLink[] = [
       { to: '/partners', label: 'Partner With Us' },
     ],
   },
-  { to: '/about', label: 'About' },
   { to: '/pricing', label: 'Pricing' },
   { to: '/contact', label: 'Contact' },
 ];
@@ -75,7 +82,16 @@ export function PublicNav() {
           </Link>
 
           {/* Desktop Nav */}
-          <div className="hidden lg:flex items-center gap-1">
+          {/*
+            xl, not lg, and flex-nowrap.
+
+            Seven items plus the wordmark and two calls to action do not fit in
+            1024px, which is why the row was breaking onto a second line. Rather
+            than let it wrap, the full nav now appears only where it genuinely
+            fits and the (already complete) mobile menu covers everything below
+            that. min-w-0 lets the row shrink before anything overflows.
+          */}
+          <div className="hidden min-w-0 flex-nowrap items-center gap-1 xl:flex">
             {navLinks.map((item) =>
               item.children ? (
                 <div
@@ -86,7 +102,7 @@ export function PublicNav() {
                 >
                   <button
                     className={cn(
-                      'flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors',
+                      'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                       openDropdown === item.label ? 'text-forest-600 bg-forest-50' : 'text-surface-600 hover:text-forest-600 hover:bg-surface-50'
                     )}
                   >
@@ -122,7 +138,7 @@ export function PublicNav() {
                   key={item.to}
                   to={item.to!}
                   className={cn(
-                    'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
+                    'shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                     isActive(item.to!) ? 'text-forest-600 bg-forest-50' : 'text-surface-600 hover:text-forest-600 hover:bg-surface-50'
                   )}
                 >
@@ -133,7 +149,7 @@ export function PublicNav() {
           </div>
 
           {/* Desktop Auth Buttons */}
-          <div className="hidden lg:flex items-center gap-3">
+          <div className="hidden shrink-0 items-center gap-3 xl:flex">
             <Link to="/login">
               <button className="group relative inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-forest-700 rounded-xl border-2 border-forest-200 bg-white hover:bg-forest-50 hover:border-forest-300 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap">
                 <LogIn className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
@@ -150,7 +166,7 @@ export function PublicNav() {
 
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="lg:hidden p-2 rounded-lg text-surface-600 hover:bg-surface-100"
+            className="xl:hidden p-2 rounded-lg text-surface-600 hover:bg-surface-100"
           >
             {mobileOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
@@ -165,7 +181,7 @@ export function PublicNav() {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.25, ease: 'easeInOut' }}
-            className="lg:hidden border-t border-surface-200 bg-white overflow-hidden"
+            className="xl:hidden border-t border-surface-200 bg-white overflow-hidden"
           >
             <div className="px-4 py-3 space-y-1 max-h-[75vh] overflow-y-auto">
               {navLinks.map((item) =>
