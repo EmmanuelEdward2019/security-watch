@@ -107,16 +107,19 @@ export default function FountainSourcePage() {
       <PublicNav />
       <main className="pt-16 lg:pt-20">
         {/* Hero */}
-        <section className="relative min-h-[70vh] flex items-center overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-surface-950 via-surface-900 to-forest-950" />
+        {/*
+          Solid surface-950 — a deliberately darker, colder ground than the
+          main site's forest. Fountain Source is the corporate security arm and
+          should not look like the civic platform wearing a different hat.
+          Previously the same three-layer gradient-plus-blocked-photograph
+          treatment as every other hero, which is what made the pages
+          indistinguishable.
+        */}
+        <section className="relative flex min-h-[70vh] items-center overflow-hidden bg-surface-950">
           <div
-            className="absolute inset-0 opacity-30 bg-cover bg-center mix-blend-overlay"
-            style={{
-              backgroundImage:
-                "url('https://images.unsplash.com/photo-1582139329536-e7284fece509?w=1920&q=80')",
-            }}
+            aria-hidden="true"
+            className="absolute inset-y-0 left-4 hidden w-px bg-white/10 sm:left-6 lg:left-8 lg:block"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
 
           <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
@@ -164,11 +167,6 @@ export default function FountainSourcePage() {
                     src="/assets/fsource-office.jpg"
                     alt="Fountain Source Corporate Office, Lagos"
                     className="w-full aspect-[4/3] object-cover"
-                    onError={(e) => {
-                      const t = e.target as HTMLImageElement;
-                      t.src =
-                        'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&q=80';
-                    }}
                   />
                   <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-6">
                     <p className="text-white font-medium">
@@ -361,7 +359,7 @@ export default function FountainSourcePage() {
         </section>
 
         {/* Contact / CTA */}
-        <section className="py-20 lg:py-28 bg-gradient-to-b from-forest-50 to-white">
+        <section className="py-20 lg:py-28 bg-slate-50">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               <ScrollReveal>

@@ -17,17 +17,27 @@ import { ScrollReveal } from '@/components/public';
 
 export function LandingHero() {
   return (
-    <section className="relative min-h-[65vh] flex items-center overflow-hidden pt-20 lg:pt-24">
-      <div className="absolute inset-0 bg-gradient-to-br from-surface-950 via-surface-900 to-forest-950" />
+    /*
+      Solid forest, one colour, no washes.
+      
+      This was four stacked layers: a base gradient, an Unsplash photograph at
+      40% under mix-blend-overlay, a black scrim, and a radial glow. The
+      photograph never actually rendered — the Content-Security-Policy allows
+      images only from 'self', data:, blob: and Supabase — so every visitor saw
+      three gradients blending into each other over nothing. That murk is the
+      "dusty splash".
+      
+      What replaces it is structural rather than atmospheric: a flat brand
+      ground and a hairline rule marking the content column. Crisp geometry,
+      not blur, and it reads as a document rather than a landing template.
+    */
+    <section className="relative flex min-h-[65vh] items-center overflow-hidden bg-forest-600 pt-20 lg:pt-24">
+      {/* A single hairline down the measure — the only decoration, and it is a
+          line rather than a haze. */}
       <div
-        className="absolute inset-0 opacity-40 bg-cover bg-center mix-blend-overlay"
-        style={{
-          backgroundImage:
-            "url('https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=1920&q=80')",
-        }}
+        aria-hidden="true"
+        className="absolute inset-y-0 left-4 hidden w-px bg-white/10 sm:left-6 lg:left-8 lg:block"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-black/30" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-forest-600/20 via-transparent to-transparent" />
 
       <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-12 lg:py-16">
         <div className="grid lg:grid-cols-12 gap-8 lg:gap-14 items-center">
@@ -81,14 +91,17 @@ export function LandingHero() {
                 src="/assets/hero-professional.jpg"
                 alt="Professional support when you need it most"
                 className="w-full aspect-[16/10] sm:aspect-[4/3] lg:aspect-[4/5] object-cover"
-                onError={(e) => {
-                  const t = e.target as HTMLImageElement;
-                  t.src =
-                    'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=800&q=80';
-                }}
+                /*
+                  No Unsplash fallback. The CSP allows images from 'self',
+                  data:, blob: and Supabase only, so the fallback could never
+                  load — it swapped a broken local image for a blocked remote
+                  one. If the asset is missing the alt text is the honest
+                  outcome.
+                */
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 md:p-8">
+              {/* A solid band, not a fade. The caption needs a legible ground;
+                  it does not need the image to dissolve into one. */}
+              <div className="absolute inset-x-0 bottom-0 bg-forest-800/95 p-4 sm:p-6 md:p-8">
                 <p className="text-white font-semibold text-sm sm:text-base md:text-lg">
                   Investigators · Legal · Forensics
                 </p>
@@ -115,13 +128,8 @@ export function EmotionalStorySection() {
                 src="/assets/team-collaboration.jpg"
                 alt="The Security Watch — professional investigations and accountability"
                 className="w-full h-full object-cover"
-                onError={(e) => {
-                  const t = e.target as HTMLImageElement;
-                  t.src =
-                    'https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=1200&q=80';
-                }}
               />
-              <div className="absolute inset-0 bg-gradient-to-tr from-black/25 to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-black/15 pointer-events-none" />
             </div>
           </ScrollReveal>
           <div className="text-left lg:pl-2">
@@ -252,7 +260,7 @@ export function HowItWorksStepsSection() {
               <div className="relative h-full">
                 {i < steps.length - 1 && (
                   <div
-                    className="hidden lg:block absolute top-10 left-[calc(50%+2rem)] w-[calc(100%-2rem)] h-px bg-gradient-to-r from-forest-300 to-transparent"
+                    className="hidden lg:block absolute top-10 left-[calc(50%+2rem)] w-[calc(100%-2rem)] h-px bg-forest-300/40"
                     aria-hidden
                   />
                 )}
@@ -304,13 +312,8 @@ export function RiskTrustSection() {
                 src="/assets/bodyguard-protection.jpg"
                 alt="Dedicated professionals on your side"
                 className="w-full h-full object-cover"
-                onError={(e) => {
-                  const t = e.target as HTMLImageElement;
-                  t.src =
-                    'https://images.unsplash.com/photo-1521791136064-7986c2920216?w=1200&q=80';
-                }}
               />
-              <div className="absolute inset-0 bg-gradient-to-tr from-black/60 to-transparent" />
+              <div className="absolute inset-0 bg-black/35" />
             </motion.div>
           </ScrollReveal>
         </div>
@@ -321,7 +324,7 @@ export function RiskTrustSection() {
 
 export function PropertyVerificationSection() {
   return (
-    <section className="py-16 sm:py-20 bg-gradient-to-b from-forest-50 to-white">
+    <section className="py-16 sm:py-20 bg-forest-50">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-10 items-center">
           <ScrollReveal>
@@ -330,11 +333,6 @@ export function PropertyVerificationSection() {
                 src="/assets/property-verification.jpg"
                 alt="Property verification"
                 className="w-full aspect-[4/3] object-cover"
-                onError={(e) => {
-                  const t = e.target as HTMLImageElement;
-                  t.src =
-                    'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=1200&q=80';
-                }}
               />
             </div>
           </ScrollReveal>
@@ -422,18 +420,14 @@ export function TrustBulletsSection() {
 }
 
 export function FinalCtaSection() {
+  /*
+   * Solid forest-800. Was three layers — a gradient, a CSP-blocked photograph
+   * at 25%, and a 70% scrim over it — which resolved to a murky wash because
+   * the photograph never loaded.
+   */
   return (
-    <section className="relative py-20 sm:py-24 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-forest-800 via-forest-700 to-surface-900" />
-      <div
-        className="absolute inset-0 opacity-25 bg-cover bg-center"
-        style={{
-          backgroundImage:
-            "url('https://images.unsplash.com/photo-1505664194779-8beaceb93744?w=1920&q=80')",
-        }}
-      />
-      <div className="absolute inset-0 bg-forest-950/70" />
-      <div className="relative z-10 max-w-3xl mx-auto px-4 sm:px-6 text-center">
+    <section className="relative overflow-hidden border-y border-forest-700 bg-forest-800 py-20 sm:py-24">
+      <div className="relative z-10 mx-auto max-w-3xl px-4 text-center sm:px-6">
         <ScrollReveal>
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white leading-tight">
             Take the First Step Toward Resolution

@@ -204,7 +204,7 @@ export function PropertyDetailPage() {
                   )}
                 </>
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-brand-50 to-brand-100">
+                <div className="w-full h-full flex items-center justify-center bg-brand-50">
                   <span className="text-6xl text-brand-300 font-display">TSW</span>
                 </div>
               )}

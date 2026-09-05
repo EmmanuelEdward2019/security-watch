@@ -141,7 +141,7 @@ export function PublicNav() {
               </button>
             </Link>
             <Link to="/register">
-              <button className="group relative inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-forest-600 to-forest-700 hover:from-forest-700 hover:to-forest-800 transition-all duration-200 shadow-md hover:shadow-lg hover:shadow-forest-500/25 whitespace-nowrap">
+              <button className="group relative inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-xl bg-forest-600 hover:bg-forest-700 transition-all duration-200 shadow-md hover:shadow-lg hover:shadow-forest-500/25 whitespace-nowrap">
                 <UserPlus className="w-4 h-4 transition-transform group-hover:scale-110" />
                 Get started
               </button>
@@ -249,7 +249,7 @@ export function PublicNav() {
                 <Link
                   to="/register"
                   onClick={() => setMobileOpen(false)}
-                  className="flex items-center justify-center gap-2.5 w-full px-4 py-3.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-forest-600 to-forest-700 hover:from-forest-700 hover:to-forest-800 active:from-forest-800 active:to-forest-900 transition-all duration-200 shadow-md"
+                  className="flex items-center justify-center gap-2.5 w-full px-4 py-3.5 text-sm font-semibold text-white rounded-xl bg-forest-600 hover:bg-forest-700 active:bg-forest-800 transition-all duration-200 shadow-md"
                 >
                   <UserPlus className="w-4 h-4" />
                   Get started

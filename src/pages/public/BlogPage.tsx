@@ -37,7 +37,7 @@ export default function BlogPage() {
     <div className="min-h-screen bg-white">
       <PublicNav />
       <main className="pt-16 lg:pt-20">
-        <section className="py-20 lg:py-28 bg-gradient-to-br from-forest-50 to-white">
+        <section className="py-20 lg:py-28 bg-sky-50">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <ScrollReveal>
               <h1 className="text-4xl sm:text-5xl font-bold text-surface-900 mb-6">

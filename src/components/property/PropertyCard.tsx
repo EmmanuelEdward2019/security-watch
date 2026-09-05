@@ -54,7 +54,7 @@ export function PropertyCard({ property, onClick, className }: PropertyCardProps
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-brand-50 to-brand-100">
+          <div className="w-full h-full flex items-center justify-center bg-brand-50">
             <span className="text-4xl text-brand-300 font-display">TSW</span>
           </div>
         )}

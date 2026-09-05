@@ -125,8 +125,6 @@ export default function LandingPage() {
                 desc: 'Engage vetted private investigators, licensed legal practitioners, and forensic specialists for sensitive and complex matters.',
                 image: '/assets/hero-professional.jpg',
                 link: '/services/investigations',
-                fallback:
-                  'https://images.unsplash.com/photo-1589829548016-20b91c47e8f3?w=800&q=80',
               },
               {
                 icon: Eye,
@@ -134,8 +132,6 @@ export default function LandingPage() {
                 desc: 'Independent monitoring, assessment, and reporting on public and private institutions to promote accountability and reform.',
                 image: '/assets/contact-support.jpg',
                 link: '/services/transparency',
-                fallback:
-                  'https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=800&q=80',
               },
               {
                 icon: Home,
@@ -143,8 +139,6 @@ export default function LandingPage() {
                 desc: 'Comprehensive title searches, ownership verification, and due diligence services to safeguard your real estate transactions.',
                 image: '/assets/property-verification.jpg',
                 link: '/services/property',
-                fallback:
-                  'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&q=80',
               },
             ].map((item, i) => (
               <ScrollReveal key={item.title} delay={i * 0.1}>
@@ -157,10 +151,6 @@ export default function LandingPage() {
                       src={item.image}
                       alt=""
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      onError={(e) => {
-                        const el = e.target as HTMLImageElement;
-                        el.src = item.fallback;
-                      }}
                     />
                   </div>
                   <div className="p-6 text-center">

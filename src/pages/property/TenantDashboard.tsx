@@ -91,7 +91,7 @@ export function TenantDashboard() {
             transition={{ delay: 0.1 }}
             className="lg:col-span-2"
           >
-            <Card className="bg-gradient-to-br from-brand-50 to-brand-100/50 border-brand-200">
+            <Card className="bg-brand-50 border-brand-200">
               <CardContent className="p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                 <div>
                   <h2 className="text-xl font-semibold text-surface-900 mb-2">

@@ -8,7 +8,7 @@ export default function ReportsPage() {
     <div className="min-h-screen bg-white">
       <PublicNav />
       <main className="pt-16 lg:pt-20">
-        <section className="py-20 lg:py-28 bg-gradient-to-br from-forest-50 to-white">
+        <section className="py-20 lg:py-28 bg-sky-50">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               <ScrollReveal>

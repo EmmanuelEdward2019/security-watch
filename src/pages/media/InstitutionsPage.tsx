@@ -96,7 +96,7 @@ export function InstitutionsPage() {
   return (
     <div className="min-h-screen bg-surface-50">
       {/* Header */}
-      <section className="bg-gradient-to-br from-brand-600 via-brand-700 to-brand-900 text-white py-12">
+      <section className="bg-brand-700 text-white py-12">
         <div className="container mx-auto px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

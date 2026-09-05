@@ -152,7 +152,7 @@ export default function FountainSourceRequestPage() {
     <div className="min-h-screen bg-white">
       <PublicNav />
       <main className="pt-16 lg:pt-20">
-        <section className="py-16 lg:py-24 bg-gradient-to-br from-forest-50 to-white">
+        <section className="py-16 lg:py-24 bg-slate-50">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <ScrollReveal>
               <Link
