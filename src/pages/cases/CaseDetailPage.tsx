@@ -33,6 +33,10 @@ import {
 import { CaseStatusTracker } from '@/components/cases/CaseStatusTracker';
 import { EvidenceTimeline } from '@/components/cases/EvidenceTimeline';
 import { EngagementPanel } from '@/components/cases/EngagementPanel';
+import { CorroborationPanel } from '@/components/cases/CorroborationPanel';
+import { CustodianPanel } from '@/components/cases/CustodianPanel';
+import { EvidenceGrantPanel } from '@/components/cases/EvidenceGrantPanel';
+import { OutcomePanel } from '@/components/cases/OutcomePanel';
 import { uploadFile, generateFileHash, buildObjectPath, STORAGE_BUCKETS } from '@/lib/supabase';
 import type { UploadedFile } from '@/components/ui/FileUpload';
 import {
@@ -75,6 +79,22 @@ export function CaseDetailPage() {
   const [isUploading, setIsUploading] = useState(false);
 
   const canEditStatus = user?.role === 'admin' || user?.role === 'investigator';
+
+  /*
+   * Who may record what happened.
+   *
+   * Administrators, and the professionals actually assigned to THIS case —
+   * matching what `record_case_outcome` enforces. Deliberately not the
+   * complainant: the outcome feeds a published scorecard that names
+   * institutions, and a figure derived from self-reported success is not
+   * something anyone should cite.
+   */
+  const canRecordOutcome =
+    user?.role === 'admin' ||
+    (!!user?.user_id &&
+      (currentCase?.assigned_investigator_id === user.user_id ||
+        currentCase?.assigned_lawyer_id === user.user_id ||
+        currentCase?.assigned_expert_id === user.user_id));
   const canAddEvidence =
     user?.role === 'complainant' ||
     user?.role === 'investigator' ||
@@ -217,6 +237,37 @@ export function CaseDetailPage() {
             caseId={currentCase.id}
             isComplainant={currentCase.complainant_id === user?.user_id}
           />
+
+          {/*
+            Whether anyone unconnected reported the same thing. Counts only —
+            never another complainant's title, name or case id, because in a
+            land dispute or a domestic matter that identifies the neighbour.
+          */}
+          <CorroborationPanel caseId={currentCase.id} />
+
+          {/*
+            Recorded by an administrator or an assigned professional, never by
+            the complainant: these figures feed the published scorecard, and
+            self-reported success is not citable.
+          */}
+          <OutcomePanel
+            caseId={currentCase.id}
+            outcome={currentCase.outcome ?? null}
+            outcomeNote={currentCase.outcome_note ?? null}
+            handlingInstitution={currentCase.handling_institution ?? null}
+            outcomeRecordedAt={currentCase.outcome_recorded_at ?? null}
+            canRecord={canRecordOutcome}
+            onRecorded={() => id && void fetchCase(id)}
+          />
+
+          {/*
+            Only the complainant sees this — arranging disclosure of somebody
+            else's case file over their head is not a feature.
+          */}
+          <CustodianPanel
+            caseId={currentCase.id}
+            isComplainant={currentCase.complainant_id === user?.user_id}
+          />
         </motion.div>
       ),
     },
@@ -269,6 +320,17 @@ export function CaseDetailPage() {
               </motion.div>
             )}
           </AnimatePresence>
+          {/*
+            Sharing outward. Sits above the timeline because the question
+            "who has this been shown to" belongs next to the exhibits, not
+            buried under them — it is one of the first things anyone asks of a
+            chain of custody.
+          */}
+          <EvidenceGrantPanel
+            caseId={currentCase.id}
+            evidence={evidence.map((e) => ({ id: e.id, file_name: e.file_name }))}
+          />
+
           {/* Case context so a custody certificate identifies its own subject,
               and the issuer so the document records who produced it. */}
           {evidence.length > 0 ? (

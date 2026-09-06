@@ -20,6 +20,7 @@ import { useCaseStore } from '@/stores/caseStore';
 import {
   buildCustodyCertificate,
   openCustodyCertificate,
+  fetchEvidenceAnchor,
 } from '@/services/custodyExport';
 import type { Evidence, CustodyLog } from '@/types';
 import { cn } from '@/utils/cn';
@@ -122,13 +123,20 @@ function EvidenceTimelineItem({
   const Icon = FILE_ICONS[fileIconKey(item.file_type)];
   const hasCustody = item.chain_of_custody?.length > 0;
 
-  const handleCertificate = () => {
+  const handleCertificate = async () => {
+    // Fetched at issue rather than held in state: the anchor is only relevant
+    // on the certificate, and looking it up for every exhibit in a long
+    // timeline would be a request per row for a paragraph nobody has asked to
+    // read yet.
+    const anchor = await fetchEvidenceAnchor(item.id);
+
     const html = buildCustodyCertificate({
       evidence: item,
       caseTitle,
       caseId,
       issuedBy,
       verifiedNow: integrity,
+      anchor,
     });
 
     if (!openCustodyCertificate(html)) {
@@ -228,7 +236,7 @@ function EvidenceTimelineItem({
                   size="sm"
                   variant="ghost"
                   icon={FileText}
-                  onClick={handleCertificate}
+                  onClick={() => void handleCertificate()}
                 >
                   Custody certificate
                 </Button>

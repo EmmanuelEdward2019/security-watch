@@ -1,3 +1,4 @@
+import { supabase } from '@/lib/supabase';
 import type { Evidence, CustodyLog } from '@/types';
 
 /**
@@ -43,10 +44,22 @@ export interface CustodyCertificateInput {
   issuedBy: string;
   /** Result of a verification run immediately before issuing, if one was made. */
   verifiedNow?: boolean | null;
+  /**
+   * When the platform first saw this file's digest, if it was registered
+   * before the bytes were uploaded (migration 028). Materially strengthens the
+   * claim — see the paragraph it produces below.
+   */
+  anchor?: {
+    anchoredAt: string;
+    /** Device clock at capture. UNVERIFIED, and labelled so on the document. */
+    capturedAt: string | null;
+    /** Hours the file existed off-platform between anchoring and arrival. */
+    heldHours: number | null;
+  } | null;
 }
 
 export function buildCustodyCertificate(input: CustodyCertificateInput): string {
-  const { evidence, caseTitle, caseId, issuedBy, verifiedNow } = input;
+  const { evidence, caseTitle, caseId, issuedBy, verifiedNow, anchor } = input;
   const trail = (evidence.chain_of_custody ?? []) as CustodyLog[];
 
   const verificationLine =
@@ -55,6 +68,40 @@ export function buildCustodyCertificate(input: CustodyCertificateInput): string 
       : verifiedNow === false
         ? '<span class="bad">FAILED at issue — the stored file does NOT hash to the recorded value. This exhibit must not be relied upon.</span>'
         : '<span class="muted">Not re-verified at the time this certificate was issued.</span>';
+
+  /*
+   * The early-anchor paragraph.
+   *
+   * This is the strongest statement the platform can make about WHEN, so the
+   * wording is careful in both directions. It says the digest was registered
+   * before the bytes arrived, which narrows the window in which the file could
+   * have been fabricated. It also says, in the same breath, that the platform
+   * is the attesting party and that the capture time came from a device clock
+   * nobody verified — because a certificate that let a reader infer
+   * independent notarisation would be worse than one that said nothing.
+   */
+  const anchorBlock = anchor
+    ? `
+  <div class="scope">
+    <strong>Digest registered before upload.</strong> The SHA-256 above was
+    registered with The Security Watch at
+    ${escapeHtml(formatTimestamp(anchor.anchoredAt))}, before this file was
+    uploaded${
+      anchor.heldHours !== null && anchor.heldHours > 0
+        ? ` — the bytes themselves arrived approximately ${anchor.heldHours} hour${anchor.heldHours === 1 ? '' : 's'} later`
+        : ''
+    }. The uploaded file matches that digest. This narrows the period in which
+    the file could have been altered to the time before it was registered.
+    ${
+      anchor.capturedAt
+        ? `The capturing device reported a recording time of ${escapeHtml(formatTimestamp(anchor.capturedAt))}; that figure comes from the device's own clock and is not independently verified.`
+        : ''
+    }
+    Note that the registering party is The Security Watch, the same party
+    storing the file. This is a strengthening of the platform's own record, not
+    third-party notarisation.
+  </div>`
+    : '';
 
   const rows = trail.length
     ? trail
@@ -135,6 +182,8 @@ export function buildCustodyCertificate(input: CustodyCertificateInput): string 
     <tbody>${rows}</tbody>
   </table>
 
+  ${anchorBlock}
+
   <div class="scope">
     <strong>What this certifies.</strong> The Security Watch recorded the SHA-256
     digest above when this file was received, and re-computes it whenever the file
@@ -166,4 +215,34 @@ export function openCustodyCertificate(html: string): boolean {
   win.document.write(html);
   win.document.close();
   return true;
+}
+
+/**
+ * When the platform first saw this exhibit's digest, if it was registered
+ * before the bytes arrived.
+ *
+ * Returns null for anything uploaded straight from a browser, which was never
+ * anchored — that is the normal case and not a fault. The certificate simply
+ * omits the paragraph rather than making a weaker version of the claim.
+ */
+export async function fetchEvidenceAnchor(evidenceId: string): Promise<
+  { anchoredAt: string; capturedAt: string | null; heldHours: number | null } | null
+> {
+  const { data, error } = await supabase.rpc('evidence_anchor_for', {
+    p_evidence_id: evidenceId,
+  });
+
+  if (error) return null;
+
+  const row = Array.isArray(data) ? data[0] : null;
+  // `fulfilled_at` is what says the bytes actually arrived and matched. An
+  // anchor without it is a digest still waiting for its file, and has nothing
+  // to say about an exhibit that already exists.
+  if (!row?.anchored_at || !row?.fulfilled_at) return null;
+
+  return {
+    anchoredAt: row.anchored_at,
+    capturedAt: row.captured_at ?? null,
+    heldHours: row.held_hours ?? null,
+  };
 }

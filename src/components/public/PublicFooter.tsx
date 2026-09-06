@@ -16,6 +16,10 @@ const footerLinks = {
     { to: '/contact', label: 'Contact' },
   ],
   Resources: [
+    // First in the group deliberately. Most people who reach this site will
+    // never file a case, and this is the page that serves them.
+    { to: '/get-help', label: 'Where to Get Help' },
+    { to: '/accountability', label: 'Does Reporting Work?' },
     { to: '/property', label: 'Property Listings' },
     { to: '/media', label: 'Media & Reports' },
     { to: '/blog', label: 'Blog' },

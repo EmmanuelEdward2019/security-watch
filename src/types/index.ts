@@ -119,10 +119,45 @@ export interface Case {
   assigned_expert_id?: string;
   created_at: string;
   updated_at: string;
+
+  /**
+   * When the incident happened, as reported. Distinct from `created_at`, which
+   * is when somebody got to their phone — those differ by hours for anyone who
+   * had to get somewhere safe first. Corroboration clusters on this.
+   */
+  occurred_at?: string | null;
+
+  /** What actually happened. Null until an outcome is recorded (031). */
+  outcome?: CaseOutcome | null;
+  outcome_note?: string | null;
+  outcome_recorded_at?: string | null;
+  outcome_recorded_by?: string | null;
+
+  /**
+   * Free text, and NEVER published — somebody will eventually type an
+   * officer's name here. The public scorecard reads `handling_institution_id`
+   * and prints the curated register's name instead.
+   */
+  handling_institution?: string | null;
+  handling_institution_id?: string | null;
+  handling_state?: string | null;
+
   complainant?: Profile;
   investigator?: Profile;
   evidence_count?: number;
 }
+
+export type CaseOutcome =
+  | 'resolved'
+  | 'referred_accepted'
+  | 'referred_refused'
+  | 'prosecution_commenced'
+  | 'conviction'
+  | 'acquittal'
+  | 'withdrawn'
+  | 'no_action_possible'
+  | 'stalled'
+  | 'duplicate';
 
 export interface Evidence {
   id: string;

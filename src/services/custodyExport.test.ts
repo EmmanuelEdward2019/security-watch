@@ -130,3 +130,69 @@ describe('buildCustodyCertificate', () => {
     expect(html).not.toContain('Invalid Date');
   });
 });
+
+type Anchor = { anchoredAt: string; capturedAt: string | null; heldHours: number | null };
+
+describe('buildCustodyCertificate — early anchor', () => {
+  const anchor: Anchor = {
+    anchoredAt: '2026-08-01T21:04:03.000Z',
+    capturedAt: '2026-08-01T21:00:00.000Z',
+    heldHours: 72,
+  };
+
+  const withAnchor = (a: Anchor | null) =>
+    buildCustodyCertificate({
+      evidence: evidence(),
+      caseTitle: 'Test case',
+      caseId: 'case-1',
+      issuedBy: 'Admin',
+      verifiedNow: true,
+      anchor: a,
+    });
+
+  it('omits the paragraph entirely when there is no anchor', () => {
+    // The normal case for anything uploaded from a browser. A weaker version
+    // of the claim would be worse than none.
+    const html = withAnchor(null);
+    expect(html).not.toMatch(/registered with The Security Watch/i);
+  });
+
+  it('states the registration time and that it preceded the upload', () => {
+    const html = withAnchor(anchor);
+    expect(html).toMatch(/registered with The Security Watch/i);
+    expect(html).toMatch(/before this file was\s+uploaded/i);
+    expect(html).toMatch(/72 hours later/);
+  });
+
+  it('labels the device clock as unverified', () => {
+    // The whole point of separating anchoredAt from capturedAt. Presenting a
+    // device-reported time as established would be the exact overreach the
+    // certificate exists to avoid.
+    const html = withAnchor(anchor);
+    expect(html).toMatch(/device's own clock/i);
+    expect(html).toMatch(/not independently verified/i);
+  });
+
+  it('disclaims third-party notarisation in the same breath', () => {
+    const html = withAnchor(anchor);
+    expect(html).toMatch(/the same party\s+storing the file/i);
+    expect(html).toMatch(/not\s+third-party notarisation/i);
+  });
+
+  it('says nothing about a capture time it does not have', () => {
+    const html = withAnchor({ ...anchor, capturedAt: null });
+    expect(html).toMatch(/registered with The Security Watch/i);
+    expect(html).not.toMatch(/device's own clock/i);
+  });
+
+  it('drops the delay clause when the file arrived immediately', () => {
+    const html = withAnchor({ ...anchor, heldHours: 0 });
+    expect(html).not.toMatch(/hours later/);
+  });
+
+  it('singularises a one-hour delay', () => {
+    const html = withAnchor({ ...anchor, heldHours: 1 });
+    expect(html).toMatch(/1 hour later/);
+    expect(html).not.toMatch(/1 hours later/);
+  });
+});

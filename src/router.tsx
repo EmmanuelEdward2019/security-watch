@@ -50,6 +50,12 @@ const MediaPage = lazyRoute(() => import('@/pages/public/MediaPage'));
 const PublicPropertyListPage = lazyRoute(() => import('@/pages/public/PublicPropertyListPage'));
 const PublicPropertyDetailPage = lazyRoute(() => import('@/pages/public/PublicPropertyDetailPage'));
 const FountainSourcePage = lazyRoute(() => import('@/pages/public/FountainSourcePage'));
+const GetHelpPage = lazyRoute(() => import('@/pages/public/GetHelpPage'));
+const AccountabilityPage = lazyRoute(() => import('@/pages/public/AccountabilityPage'));
+const EvidenceGrantViewPage = lazyRoute(() => import('@/pages/public/EvidenceGrantViewPage'));
+const CustodianInboxPage = lazyRoute(() => import('@/pages/cases/CustodianInboxPage'));
+const CorroborationPage = lazyRoute(() => import('@/pages/admin/CorroborationPage'));
+const ReferralDirectoryPage = lazyRoute(() => import('@/pages/admin/ReferralDirectoryPage'));
 const FountainSourceRequestPage = lazyRoute(() => import('@/pages/public/FountainSourceRequestPage'));
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -172,6 +178,17 @@ export const router = createBrowserRouter([
       { path: '/terms', element: page(<LegalPage />) },
       { path: '/disclaimer', element: page(<LegalPage />) },
       { path: '/legal/:type', element: page(<LegalPage />) },
+      { path: '/get-help', element: page(<GetHelpPage />) },
+      { path: '/accountability', element: page(<AccountabilityPage />) },
+
+      /*
+       * Outside the app shell on purpose. The person opening this has no
+       * account and never will — the whole point of a grant is reaching
+       * somebody who is not a user — so there is no navigation into the rest
+       * of the platform and nothing here assumes a session.
+       */
+      { path: '/evidence/:token', element: page(<EvidenceGrantViewPage />) },
+
       { path: '/fountain-source', element: page(<FountainSourcePage />) },
       { path: '/fountain-source/request', element: page(<FountainSourceRequestPage />) },
 
@@ -212,6 +229,7 @@ export const router = createBrowserRouter([
           { path: 'cases/new', element: page(<CreateCasePage />) },
           { path: 'cases/:id', element: page(<CaseDetailPage />) },
           { path: 'cases/submit-report', element: page(<SubmitReportPage />) },
+          { path: 'custodian', element: page(<CustodianInboxPage />) },
 
           { path: 'verification', element: page(<AgentVerificationPage />) },
           { path: 'availability', element: page(<AvailabilityPage />) },
@@ -261,6 +279,8 @@ export const router = createBrowserRouter([
           { path: 'admin/analytics', element: page(<AnalyticsPage />) },
           { path: 'admin/institution-reports', element: page(<InstitutionReportsPage />) },
           { path: 'admin/security-requests', element: page(<SecurityRequestsPage />) },
+          { path: 'admin/corroboration', element: page(<CorroborationPage />) },
+          { path: 'admin/referrals', element: page(<ReferralDirectoryPage />) },
           { path: 'admin/audit', element: page(<AuditLogPage />) },
         ],
       },
