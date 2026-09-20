@@ -47,7 +47,7 @@
 -- ── SECTION 1 — the arrangement ─────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.custodian_releases (
-  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id        UUID NOT NULL REFERENCES public.cases(id) ON DELETE CASCADE,
   -- Denormalised from the case so ownership checks never need a join, and so
   -- the row still says whose arrangement it was if the case is reassigned.

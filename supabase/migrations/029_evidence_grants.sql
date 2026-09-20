@@ -33,7 +33,7 @@
 -- ── SECTION 1 — the grant ───────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.evidence_grants (
-  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id      UUID NOT NULL REFERENCES public.cases(id) ON DELETE CASCADE,
 
   -- NULL means every exhibit currently on the case. Named deliberately: a
@@ -91,7 +91,7 @@ GRANT SELECT ON public.evidence_grants TO authenticated;
 -- ── SECTION 2 — the log ─────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.evidence_grant_views (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   grant_id    UUID NOT NULL REFERENCES public.evidence_grants(id) ON DELETE CASCADE,
   evidence_id UUID REFERENCES public.evidence(id) ON DELETE SET NULL,
   viewed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),

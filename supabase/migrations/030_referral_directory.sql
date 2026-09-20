@@ -29,7 +29,7 @@
 -- ── SECTION 1 — the directory ───────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.referral_resources (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name        TEXT NOT NULL CHECK (btrim(name) <> ''),
 
   -- What kind of body this is, which is what tells someone whether it is the
