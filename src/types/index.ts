@@ -142,6 +142,17 @@ export interface Case {
   handling_institution_id?: string | null;
   handling_state?: string | null;
 
+  /**
+   * The filing fee (032). `filing_fee_required` is false for cases filed
+   * before the fee existed — they were never asked, so they are never chased
+   * and never gated. While it is true and `filing_fee_paid_at` is null the
+   * case can be worked on and closed but NOT assigned to a professional, and
+   * the reminder sweep nudges the complainant on a 1/3/7-then-weekly cadence.
+   */
+  filing_fee_required?: boolean;
+  filing_fee_paid_at?: string | null;
+  filing_payment_id?: string | null;
+
   complainant?: Profile;
   investigator?: Profile;
   evidence_count?: number;
@@ -387,6 +398,12 @@ export interface MediaReport {
   thumbnail_url?: string;
   gps_latitude?: number;
   gps_longitude?: number;
+  /**
+   * Reverse-geocoded once at capture and stored (033). Null when the fix
+   * would not geocode; show the coordinates then rather than inventing a
+   * place. The coordinates remain the authoritative record.
+   */
+  gps_address?: string | null;
   status: MediaStatus;
   tags: string[];
   views: number;
@@ -418,6 +435,12 @@ export interface MediaLibraryItem {
   captured_at?: string | null;
   gps_latitude?: number | null;
   gps_longitude?: number | null;
+  /**
+   * Reverse-geocoded once at capture and stored (033). Null when the fix
+   * would not geocode; show the coordinates then rather than inventing a
+   * place. The coordinates remain the authoritative record.
+   */
+  gps_address?: string | null;
   note?: string | null;
   duration_seconds?: number | null;
   created_at: string;
@@ -456,6 +479,15 @@ export interface Payment {
   status: PaymentStatus;
   description: string;
   created_at: string;
+
+  /** The service_prices key this paid for. Set by payments-initialize. */
+  purpose?: string;
+  /**
+   * Stamped in the same UPDATE that sets status='completed', and only ever by
+   * the webhook. A completed payment without one was not settled by the
+   * webhook, which is what migration 004 exists to prevent.
+   */
+  verified_at?: string | null;
 }
 
 export interface AuditLog {
@@ -547,6 +579,14 @@ export interface ServicePrice {
   is_active: boolean;
   sort_order: number;
   updated_at: string;
+
+  /**
+   * True for services The Security Watch sells directly, which anyone may buy
+   * off the catalogue. False for the three professional services, which an
+   * administrator books against a case — those are paid as a DEPOSIT priced
+   * from `case_engagements`, never at the catalogue total. See 022.
+   */
+  is_platform_fee?: boolean;
 }
 
 export const PRICE_MODULE_LABELS: Record<PriceModule, string> = {

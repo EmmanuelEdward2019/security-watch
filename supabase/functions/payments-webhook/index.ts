@@ -207,18 +207,33 @@ Deno.serve(async (req: Request) => {
      * ordinary purchase simply passes through.
      */
     if (payment.case_id) {
-      const { error: settleError } = await admin.rpc('settle_engagement_deposit', {
-        p_payment_id: payment.id,
-      });
+      /*
+       * Two kinds of case money, settled by two different functions.
+       *
+       * The filing fee is the platform's own revenue and buys the case being
+       * taken on — 032 is what finally made a paid fee change anything about
+       * the case. A deposit mobilises a booked professional. Both are
+       * idempotent and both return null when they do not apply, so the branch
+       * is for clarity and one fewer round trip, not for correctness.
+       */
+      const isFilingFee =
+        payment.purpose === 'case_filing_standard' || payment.purpose === 'case_filing_urgent';
+
+      const { error: settleError } = isFilingFee
+        ? await admin.rpc('settle_case_filing_fee', { p_payment_id: payment.id })
+        : await admin.rpc('settle_engagement_deposit', { p_payment_id: payment.id });
 
       if (settleError) {
         // The money is confirmed either way; the payment must still be marked
         // settled. Log loudly — an unaccrued deposit is a person owed money
         // with no record of it.
-        console.error('[payments-webhook] settle_engagement_deposit failed:', settleError.message);
+        console.error(
+          `[payments-webhook] ${isFilingFee ? 'settle_case_filing_fee' : 'settle_engagement_deposit'} failed:`,
+          settleError.message
+        );
         await admin.from('audit_logs').insert({
           user_id: payment.payer_id,
-          action: 'engagement_deposit_settle_failed',
+          action: isFilingFee ? 'case_filing_settle_failed' : 'engagement_deposit_settle_failed',
           resource_type: 'payment',
           resource_id: payment.id,
           details: { reference, error: settleError.message },

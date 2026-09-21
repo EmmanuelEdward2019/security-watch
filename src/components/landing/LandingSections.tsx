@@ -239,7 +239,7 @@ export function WhoWeAreSection() {
 
 const steps = [
   { n: 1, title: 'Submit Your Case', desc: 'Provide a detailed account of the matter and securely upload any supporting evidence or documentation through our encrypted portal.', icon: FileSearch },
-  { n: 2, title: 'Professional Matching', desc: 'Your case is reviewed and assigned to the appropriate specialist — whether a private investigator, legal practitioner, or forensic analyst — based on case type and jurisdiction.', icon: Scale },
+  { n: 2, title: 'Professional Matching', desc: 'A one-off filing fee covers triage, and your case is then assigned to the appropriate specialist — whether a private investigator, legal practitioner, or forensic analyst — based on case type and jurisdiction. Your case is saved from the moment you submit it, whether you pay now or later.', icon: Scale },
   { n: 3, title: 'Active Investigation', desc: 'The assigned professional conducts a structured investigation with regular progress updates, milestone tracking, and transparent communication throughout the process.', icon: Shield },
   { n: 4, title: 'Resolution & Documentation', desc: 'Upon completion, you receive a comprehensive case report with findings, evidence, and recommended next steps for legal or administrative follow-through.', icon: CheckCircle2 },
 ];

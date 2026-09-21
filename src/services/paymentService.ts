@@ -162,6 +162,28 @@ export async function fetchServicePrices(
   return { prices: (data ?? []) as ServicePrice[], error: null };
 }
 
+/**
+ * Every payment recorded against one case, newest first.
+ *
+ * RLS on `payments` is `payer_id = auth.uid() OR is_admin()`, so this returns
+ * rows to the complainant who paid them and to administrators, and an empty
+ * list to an assigned professional. That is deliberate — what the complainant
+ * paid is not the investigator's business — and it is why the panel that uses
+ * this renders nothing rather than an empty state for those viewers.
+ */
+export async function fetchCasePayments(
+  caseId: string
+): Promise<{ payments: Payment[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('case_id', caseId)
+    .order('created_at', { ascending: false });
+
+  if (error) return { payments: [], error: error.message };
+  return { payments: (data ?? []) as Payment[], error: null };
+}
+
 export function formatCurrency(amount: number, currency = 'NGN'): string {
   try {
     return new Intl.NumberFormat('en-NG', {

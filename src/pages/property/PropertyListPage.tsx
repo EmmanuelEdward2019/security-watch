@@ -106,37 +106,61 @@ export function PropertyListPage() {
       </section>
 
       <div className="container mx-auto px-4 py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
-          {/* Filter Sidebar - Collapsible on mobile */}
-          <aside
-            className={cn(
-              'lg:w-72 shrink-0',
-              showFilters ? 'block mb-4' : 'hidden lg:block'
-            )}
-          >
-            <Card className="lg:sticky lg:top-4">
-              <CardContent className="p-4 space-y-4">
-                <div className="flex items-center justify-between">
+        <div className="space-y-6">
+          {/*
+            Filters run across the top rather than down a 288px rail.
+            Stacked vertically they pushed the listing grid into two
+            columns on a laptop and forced a scroll past six controls to
+            reach the one you wanted. Across the top they read at a glance
+            and the grid gets the full width back.
+          */}
+          <aside>
+            <Card>
+              <CardContent className="p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
                   <h3 className="font-semibold text-surface-900">Filters</h3>
-                  {hasActiveFilters && (
+                  <div className="flex items-center gap-2">
+                    {hasActiveFilters && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearFilters}
+                        className="text-accent-600"
+                      >
+                        Clear
+                      </Button>
+                    )}
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      onClick={clearFilters}
-                      className="text-accent-600"
+                      onClick={() => setShowFilters(!showFilters)}
+                      className="lg:hidden"
                     >
-                      Clear
+                      {showFilters ? <ChevronUp size={16} /> : <SlidersHorizontal size={16} />}
+                      {showFilters ? 'Hide' : 'Show'}
                     </Button>
-                  )}
+                  </div>
                 </div>
 
-                <Input
-                  label="Location"
-                  placeholder="City or area"
-                  value={filters.location ?? ''}
-                  onChange={(e) => setFilters({ ...filters, location: e.target.value || undefined })}
-                />
-                <div className="grid grid-cols-2 gap-2">
+                <div
+                  className={cn(
+                    'gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:items-end',
+                    showFilters ? 'grid' : 'hidden lg:grid'
+                  )}
+                >
+
+                  <div className="lg:col-span-3">
+                    <Input
+                      label="Location"
+                      placeholder="City or area"
+                      value={filters.location ?? ''}
+                      onChange={(e) =>
+                        setFilters({ ...filters, location: e.target.value || undefined })
+                      }
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 lg:col-span-3">
                   <Input
                     label="Min Price"
                     type="number"
@@ -162,63 +186,54 @@ export function PropertyListPage() {
                     }
                   />
                 </div>
-                <Select
-                  label="Property Type"
-                  options={PROPERTY_TYPE_OPTIONS}
-                  value={filters.propertyType ?? ''}
-                  onChange={(e) =>
-                    setFilters({ ...filters, propertyType: e.target.value || undefined })
-                  }
-                />
-                <Select
-                  label="Listing Type"
-                  options={LISTING_TYPE_OPTIONS}
-                  value={filters.listingType ?? ''}
-                  onChange={(e) =>
-                    setFilters({ ...filters, listingType: e.target.value || undefined })
-                  }
-                />
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={verifiedOnly}
-                    onChange={(e) => setVerifiedOnly(e.target.checked)}
-                    className="rounded border-surface-300 text-brand-500 focus:ring-brand-500"
-                  />
-                  <span className="text-sm text-surface-700">Verified only</span>
-                </label>
-                <Button
-                  variant="primary"
-                  className="w-full"
-                  onClick={handleApplyFilters}
-                >
-                  Apply Filters
-                </Button>
+                  <div className="lg:col-span-2">
+                    <Select
+                      label="Property Type"
+                      options={PROPERTY_TYPE_OPTIONS}
+                      value={filters.propertyType ?? ''}
+                      onChange={(e) =>
+                        setFilters({ ...filters, propertyType: e.target.value || undefined })
+                      }
+                    />
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <Select
+                      label="Listing Type"
+                      options={LISTING_TYPE_OPTIONS}
+                      value={filters.listingType ?? ''}
+                      onChange={(e) =>
+                        setFilters({ ...filters, listingType: e.target.value || undefined })
+                      }
+                    />
+                  </div>
+
+                  {/* Sits on the control baseline, so the row reads as one
+                      strip rather than a stack with a stray checkbox. */}
+                  <div className="flex items-center gap-3 sm:col-span-2 lg:col-span-2">
+                    <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={verifiedOnly}
+                        onChange={(e) => setVerifiedOnly(e.target.checked)}
+                        className="rounded border-surface-300 text-brand-500 focus:ring-brand-500"
+                      />
+                      <span className="text-sm text-surface-700">Verified only</span>
+                    </label>
+                    <Button variant="primary" className="flex-1" onClick={handleApplyFilters}>
+                      Apply
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </aside>
 
           {/* Main Content */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-6">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowFilters(!showFilters)}
-                className="lg:hidden"
-              >
-                {showFilters ? (
-                  <>
-                    <ChevronUp size={16} />
-                    Hide Filters
-                  </>
-                ) : (
-                  <>
-                    <SlidersHorizontal size={16} />
-                    Show Filters
-                  </>
-                )}
-              </Button>
+          <div className="min-w-0">
+            {/* The show/hide toggle now lives on the filter card itself,
+                beside Clear, rather than orphaned above the results. */}
+            <div className="mb-6 flex items-center justify-end">
               <p className="text-sm text-surface-500">
                 {properties.length} {properties.length === 1 ? 'property' : 'properties'} found
               </p>

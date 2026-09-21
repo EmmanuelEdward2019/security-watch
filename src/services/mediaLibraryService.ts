@@ -42,6 +42,8 @@ export interface AddToLibraryInput {
   latitude?: number | null;
   longitude?: number | null;
   note?: string | null;
+  /** Reverse-geocoded at capture; null when the fix would not geocode (033). */
+  address?: string | null;
   durationSeconds?: number | null;
 }
 
@@ -58,7 +60,7 @@ export async function addToLibrary(
 ): Promise<{ item: MediaLibraryItem | null; error: string | null }> {
   const {
     ownerId, file, fileName, source,
-    capturedAt = null, latitude = null, longitude = null,
+    capturedAt = null, latitude = null, longitude = null, address = null,
     note = null, durationSeconds = null,
   } = input;
 
@@ -99,6 +101,7 @@ export async function addToLibrary(
       captured_at: capturedAt,
       gps_latitude: latitude,
       gps_longitude: longitude,
+      gps_address: address,
       note,
       duration_seconds: durationSeconds,
     })

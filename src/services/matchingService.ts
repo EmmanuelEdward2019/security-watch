@@ -25,6 +25,24 @@ export interface MatchResult {
 }
 
 /** Edge function errors carry our own message in the response body. */
+/**
+ * Turns a functions-client error into something a person can act on.
+ *
+ * supabase-js raises two very different things through one channel:
+ *
+ *   FunctionsHttpError  — the function answered. `context` is the Response, and
+ *                         our functions put a readable `{ error }` in the body.
+ *   FunctionsFetchError — the request never completed. There is no `context`,
+ *                         and the message is the famously unhelpful
+ *                         "Failed to send a request to the Edge Function".
+ *
+ * The second is not a fault in the function and is not fixed by retrying the
+ * button. It means the browser could not reach the endpoint at all: an
+ * extension or network blocking requests to *.supabase.co/functions, an
+ * offline moment, or an origin the function's CORS allowlist does not cover.
+ * Reporting that verbatim sent people looking for a bug in the report
+ * generator, which is why it is named here instead.
+ */
 async function readFunctionError(error: unknown, fallback: string): Promise<string> {
   const ctx = (error as { context?: Response })?.context;
   if (ctx && typeof ctx.json === 'function') {
@@ -32,10 +50,20 @@ async function readFunctionError(error: unknown, fallback: string): Promise<stri
       const body = await ctx.json();
       if (body?.error) return body.error as string;
     } catch {
-      /* fall through to the transport message */
+      /* fall through */
     }
+    const status = (ctx as Response).status;
+    if (status) return `${fallback} (server responded ${status}).`;
   }
-  return (error as { message?: string })?.message ?? fallback;
+
+  const message = (error as { message?: string })?.message ?? '';
+  if (/failed to send a request/i.test(message)) {
+    return navigator.onLine === false
+      ? 'You appear to be offline. Reconnect and try again.'
+      : 'The request never reached the server. This is usually a browser extension or network blocking requests to Supabase functions — try a private window with extensions disabled.';
+  }
+
+  return message || fallback;
 }
 
 /** Ranked investigator suggestions for a case. Administrators only. */

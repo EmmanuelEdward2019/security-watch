@@ -137,7 +137,7 @@ Deno.serve(async (req: Request) => {
     // --- Price server-side. This is the whole point of the function. ---
     const { data: price } = await admin
       .from('service_prices')
-      .select('key, label, amount, currency, module, is_active')
+      .select('key, label, amount, currency, module, is_active, is_platform_fee')
       .eq('key', body.purpose)
       .eq('is_active', true)
       .maybeSingle();
@@ -149,8 +149,68 @@ Deno.serve(async (req: Request) => {
       return json({ error: `Unsupported currency: ${price.currency}` }, 400, cors);
     }
 
-    const quantity = Math.min(Math.max(Math.floor(Number(body.quantity) || 1), 1), 20);
-    const amount = Number(price.amount) * quantity;
+    /*
+     * TWO KINDS OF SERVICE, PRICED FROM TWO DIFFERENT PLACES.
+     *
+     * A platform service (filing fee, property verification, archive access)
+     * is sold off the catalogue at its listed price, and anyone may buy one.
+     *
+     * The three professional services are NOT self-serve. An administrator
+     * books a named professional against a case, which snapshots the agreed
+     * total and a deposit — 50% by default — onto `case_engagements`. What
+     * the complainant owes is that DEPOSIT, not the catalogue total.
+     *
+     * Pricing these off the catalogue charged the full amount instead: the
+     * engagement panel offered "Pay NGN 75,000 deposit" and the next screen
+     * asked for NGN 150,000. Worse, buying one with no engagement booked took
+     * the money and did nothing at all, because settle_engagement_deposit()
+     * matches on an awaiting_deposit row and returns NULL when there is none.
+     */
+    let quantity = Math.min(Math.max(Math.floor(Number(body.quantity) || 1), 1), 20);
+    let amount: number;
+    let description: string;
+
+    if (price.is_platform_fee) {
+      amount = Number(price.amount) * quantity;
+      description = quantity > 1 ? `${price.label} × ${quantity}` : price.label;
+    } else {
+      if (!body.caseId) {
+        return json(
+          { error: 'That service is arranged by an administrator against a case, not bought directly.' },
+          400,
+          cors
+        );
+      }
+
+      const { data: engagement } = await admin
+        .from('case_engagements')
+        .select('id, deposit_amount, currency, status')
+        .eq('case_id', body.caseId)
+        .eq('service_key', price.key)
+        .eq('status', 'awaiting_deposit')
+        .order('created_at')
+        .limit(1)
+        .maybeSingle();
+
+      if (!engagement) {
+        return json(
+          { error: 'There is no engagement awaiting a deposit for that service on this case.' },
+          400,
+          cors
+        );
+      }
+
+      // A deposit is a single agreed figure. Quantity is meaningless here and
+      // would silently multiply what someone owes.
+      quantity = 1;
+      amount = Number(engagement.deposit_amount);
+      description = `${price.label} — mobilisation deposit`;
+
+      if (engagement.currency !== price.currency) {
+        return json({ error: 'That engagement is priced in another currency' }, 400, cors);
+      }
+    }
+
     if (!Number.isFinite(amount) || amount <= 0) {
       return json({ error: 'Could not price that service' }, 400, cors);
     }
@@ -189,7 +249,7 @@ Deno.serve(async (req: Request) => {
         provider_reference: reference,
         status: 'pending',
         purpose: price.key,
-        description: quantity > 1 ? `${price.label} × ${quantity}` : price.label,
+        description,
       })
       .select('id')
       .single();

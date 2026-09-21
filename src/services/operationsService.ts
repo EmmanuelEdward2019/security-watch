@@ -50,6 +50,7 @@ async function countOrUndefined(
 export async function fetchStuckQueues(): Promise<StuckQueue[]> {
   const [
     unassignedCases,
+    unpaidFilingFees,
     staleKyc,
     unreleasedPayouts,
     awaitingDeposit,
@@ -64,6 +65,24 @@ export async function fetchStuckQueues(): Promise<StuckQueue[]> {
         .select('id', { count: 'exact', head: true })
         .is('assigned_investigator_id', null)
         .in('status', ['submitted', 'under_review'])
+        .lt('created_at', daysAgo(3))
+        // 032 gates assignment on the filing fee. A case blocked on the
+        // complainant's payment is not an administrator's to action, and
+        // counting it here would put the same case in two queues with
+        // contradictory advice. It appears under unpaid_filing_fees instead.
+        .or('filing_fee_required.eq.false,filing_fee_paid_at.not.is.null')
+    ),
+
+    // Filed, never paid for. The complainant was asked and has not paid, so
+    // the case cannot be assigned to anyone. The reminder sweep is already
+    // chasing it; this is here so the money is visible rather than silent.
+    countOrUndefined(() =>
+      supabase
+        .from('cases')
+        .select('id', { count: 'exact', head: true })
+        .eq('filing_fee_required', true)
+        .is('filing_fee_paid_at', null)
+        .not('status', 'in', '(completed,closed)')
         .lt('created_at', daysAgo(3))
     ),
 
@@ -121,6 +140,15 @@ export async function fetchStuckQueues(): Promise<StuckQueue[]> {
       action: 'Assign someone, or close the case',
       href: '/app/admin/cases',
       count: unassignedCases,
+      thresholdDays: 3,
+      warnAt: 1,
+    },
+    {
+      key: 'unpaid_filing_fees',
+      label: 'Cases filed but never paid for',
+      action: 'Reminders are automatic — chase directly, or close the case',
+      href: '/app/admin/cases',
+      count: unpaidFilingFees,
       thresholdDays: 3,
       warnAt: 1,
     },

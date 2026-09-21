@@ -306,7 +306,26 @@ export default function KycReviewPage() {
         isOpen={!!selected}
         onClose={() => setSelected(null)}
         title="Verification application"
-        size="lg"
+        /* Identity documents, service records and guarantors, read side by
+           side. `lg` gave this a phone-width column on a desktop screen. */
+        size="2xl"
+        footer={
+          selected && inv.verification_status === 'pending' ? (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                variant="ghost"
+                className="flex-1"
+                icon={X}
+                onClick={() => setDecision('rejected')}
+              >
+                Reject
+              </Button>
+              <Button className="flex-1" icon={Check} onClick={() => setDecision('approved')}>
+                Approve &amp; grant role
+              </Button>
+            </div>
+          ) : undefined
+        }
       >
         {selected && (
           <div className="space-y-5">
@@ -454,21 +473,6 @@ export default function KycReviewPage() {
               </div>
             )}
 
-            {inv.verification_status === 'pending' && (
-              <div className="flex flex-col gap-2 border-t border-surface-200 pt-4 sm:flex-row">
-                <Button
-                  variant="ghost"
-                  className="flex-1"
-                  icon={X}
-                  onClick={() => setDecision('rejected')}
-                >
-                  Reject
-                </Button>
-                <Button className="flex-1" icon={Check} onClick={() => setDecision('approved')}>
-                  Approve &amp; grant role
-                </Button>
-              </div>
-            )}
           </div>
         )}
       </Modal>

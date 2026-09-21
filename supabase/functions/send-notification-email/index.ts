@@ -128,6 +128,7 @@ type TransactionalTemplateId =
   | 'investigator_matched'
   | 'report_ready'
   | 'institution_report_published'
+  | 'payment_reminder'
   | 'generic_notification';
 
 interface TemplatePayload {
@@ -168,6 +169,22 @@ function renderTransactionalEmail(
               <tr><td style="padding:8px 0;border-bottom:1px solid #e2e8f0;color:#64748b;">Reference</td><td style="padding:8px 0;border-bottom:1px solid #e2e8f0;text-align:right;">${escapeHtml(data.reference || '—')}</td></tr>
             </table>
             ${data.actionUrl ? ctaButton(data.actionUrl, 'View receipt') : ''}`,
+        }),
+      };
+    case 'payment_reminder':
+      return {
+        subject: `Payment outstanding: ${data.caseTitle || 'The Security Watch'}`,
+        html: emailShell({
+          title: 'A payment is still outstanding',
+          preheader: `${data.amount || 'A payment'} is due on ${data.caseTitle || 'your request'}.`,
+          innerHtml: `<p style="margin:0 0 16px;">Hello ${name},</p>
+            <p style="margin:0 0 16px;">${escapeHtml(data.extraNote || 'A payment on your account is outstanding.')}</p>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
+              <tr><td style="padding:8px 0;border-bottom:1px solid #e2e8f0;color:#64748b;">Amount due</td><td style="padding:8px 0;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;">${escapeHtml(data.amount || '\u2014')}</td></tr>
+              <tr><td style="padding:8px 0;border-bottom:1px solid #e2e8f0;color:#64748b;">For</td><td style="padding:8px 0;border-bottom:1px solid #e2e8f0;text-align:right;">${escapeHtml(data.caseTitle || '\u2014')}</td></tr>
+            </table>
+            ${data.actionUrl ? ctaButton(data.actionUrl, 'Pay now') : ctaButton(site + '/app/payments', 'Go to payments')}
+            <p style="margin:16px 0 0;color:#64748b;font-size:13px;">Nothing is cancelled or deleted while this is outstanding. If you believe this is a mistake, reply to this email and we will look into it.</p>`,
         }),
       };
     case 'payment_failed':
@@ -392,7 +409,7 @@ const VALID_TEMPLATES = new Set<string>([
   'new_message', 'verification_submitted', 'verification_approved',
   'verification_rejected', 'security_service_request_received',
   'security_service_request_admin', 'investigator_matched', 'report_ready',
-  'institution_report_published', 'generic_notification',
+  'institution_report_published', 'payment_reminder', 'generic_notification',
 ]);
 
 function json(body: unknown, status: number, cors: Record<string, string>) {

@@ -199,9 +199,12 @@ export function CaseListPage() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
-          className="flex flex-col lg:flex-row gap-4 mb-6"
+          /* Was flex-col until lg, so on any laptop under 1024px the search
+             box and all three selects stacked into a column. flex-wrap keeps
+             them on one line and wraps rather than stacking. */
+          className="flex flex-wrap items-center gap-3 mb-6"
         >
-          <div className="flex-1 flex gap-2">
+          <div className="flex min-w-[16rem] flex-1 gap-2">
             <Input
               placeholder="Search cases..."
               value={searchInput}

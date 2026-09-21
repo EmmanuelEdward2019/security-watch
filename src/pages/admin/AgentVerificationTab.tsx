@@ -217,7 +217,7 @@ export function AgentVerificationTab() {
         />
       </div>
 
-      <Modal isOpen={!!selected} onClose={() => setSelected(null)} title="Review Agent" size="lg">
+      <Modal isOpen={!!selected} onClose={() => setSelected(null)} title="Review Agent" size="2xl">
         {selected && (
           <div className="space-y-4">
             <div>

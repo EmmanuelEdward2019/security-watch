@@ -212,6 +212,13 @@ supabase secrets set \
   PAYSTACK_SECRET_KEY=sk_live_xxxxxxxx \
   ALLOWED_ORIGINS=https://thesecuritywatch.com,https://www.thesecuritywatch.com \
   SITE_URL=https://thesecuritywatch.com
+
+# Scheduled functions. Each refuses to run at all if its secret is unset,
+# rather than sweeping unauthenticated. Generate with `openssl rand -hex 32`.
+supabase secrets set \
+  PUSH_DISPATCH_SECRET=xxxxxxxx \
+  CUSTODIAN_SWEEP_SECRET=xxxxxxxx \
+  PAYMENT_REMINDER_SECRET=xxxxxxxx
 ```
 
 `RESEND_FROM_EMAIL` must be a domain verified in Resend. The
@@ -238,7 +245,34 @@ supabase functions deploy admin-process-deletion
 supabase functions deploy auth-send-email    --no-verify-jwt
 supabase functions deploy payments-webhook   --no-verify-jwt
 supabase functions deploy public-enquiry     --no-verify-jwt
+supabase functions deploy evidence-grant     --no-verify-jwt
+
+# Scheduler-invoked — shared secret compared in constant time
+supabase functions deploy push-dispatch      --no-verify-jwt
+supabase functions deploy custodian-sweep    --no-verify-jwt
+supabase functions deploy payment-reminders  --no-verify-jwt
 ```
+
+### Scheduling the sweeps
+
+Three functions do nothing until something calls them on a timer. There is no
+`pg_cron` on this project, so use an external scheduler (GitHub Actions on a
+`schedule:` trigger, or any cron host) and send the secret as `x-sweep-secret`:
+
+```bash
+curl -X POST https://YOUR_PROJECT_REF.supabase.co/functions/v1/payment-reminders \
+  -H "x-sweep-secret: $PAYMENT_REMINDER_SECRET"
+```
+
+| Function | Cadence | What happens if it never runs |
+|---|---|---|
+| `push-dispatch` | every 1–5 min | Notifications appear in-app but no handset ever buzzes. |
+| `custodian-sweep` | hourly or daily | Custodian release clocks never advance. Fails closed, so nothing is wrongly disclosed. |
+| `payment-reminders` | hourly | Nobody is ever chased for money. The cadence lives in the database, so a missed run is caught up on the next one rather than skipped. |
+
+`payment-reminders` is safe to over-run: the UNIQUE constraint on
+`payment_reminders` means two overlapping sweeps cannot send the same nudge
+twice, and a run with nothing due is a single cheap query.
 
 ---
 

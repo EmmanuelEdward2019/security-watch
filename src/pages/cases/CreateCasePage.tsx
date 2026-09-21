@@ -29,6 +29,7 @@ import {
   type CaseUrgency,
 } from '@/types';
 import { cn } from '@/utils/cn';
+import { filingFeeKeyFor } from '@/lib/filingFee';
 
 const STEPS = [
   { id: 1, title: 'Basic Info' },
@@ -454,10 +455,7 @@ export function CreateCasePage() {
               icon={ArrowRight}
               onClick={() => {
                 setShowSuccessModal(false);
-                const purpose =
-                  createdUrgency === 'critical' || createdUrgency === 'high'
-                    ? 'case_filing_urgent'
-                    : 'case_filing_standard';
+                const purpose = filingFeeKeyFor(createdUrgency);
                 navigate(
                   `/app/payments?purpose=${purpose}&caseId=${encodeURIComponent(createdCaseId ?? '')}`
                 );

@@ -44,13 +44,21 @@ export default function HowItWorksPage() {
                 <h2 className="text-2xl font-bold text-surface-900">Investigative &amp; Legal Services</h2>
               </div>
             </ScrollReveal>
-            <div className="grid md:grid-cols-4 gap-6">
+            {/*
+              The filing fee is step 2 because that is where it actually sits:
+              a case cannot be assigned to anyone until it clears. Leaving it
+              out described a service that ran straight from "submit" to
+              "matching", which is not what happens and not what the case page
+              tells the person who filed.
+            */}
+            <div className="grid md:grid-cols-5 gap-6">
               {[
                 { step: 1, title: 'Submit Your Case', desc: 'Provide a detailed account and securely upload any supporting evidence or documentation.' },
-                { step: 2, title: 'Professional Matching', desc: 'Your case is reviewed and assigned to a verified specialist based on case type and jurisdiction.' },
-                { step: 3, title: 'Active Investigation', desc: 'The assigned professional conducts a structured investigation with regular progress updates.' },
-                { step: 4, title: 'Resolution & Report', desc: 'Receive a comprehensive case report with findings and recommended next steps.' },
-              ].map((item, i) => (
+                { step: 2, title: 'Pay the Filing Fee', desc: 'A one-off fee covers triage. Your case is saved either way, and nothing is assigned until it is paid.' },
+                { step: 3, title: 'Professional Matching', desc: 'Your case is reviewed and assigned to a verified specialist based on case type and jurisdiction.' },
+                { step: 4, title: 'Active Investigation', desc: 'The assigned professional conducts a structured investigation with regular progress updates.' },
+                { step: 5, title: 'Resolution & Report', desc: 'Receive a comprehensive case report with findings and recommended next steps.' },
+              ].map((item, i, arr) => (
                 <ScrollReveal key={item.step} delay={i * 0.1}>
                   <div className="relative">
                     <div className="p-6 rounded-xl bg-surface-50 border border-surface-200">
@@ -58,7 +66,7 @@ export default function HowItWorksPage() {
                       <h3 className="font-semibold text-surface-900 mt-2">{item.title}</h3>
                       <p className="text-sm text-surface-600 mt-1">{item.desc}</p>
                     </div>
-                    {i < 3 && (
+                    {i < arr.length - 1 && (
                       <div className="hidden md:block absolute top-1/2 -right-3 w-6 h-6 -translate-y-1/2">
                         <ArrowRight className="w-6 h-6 text-surface-300" />
                       </div>

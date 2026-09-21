@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Eye } from 'lucide-react';
+import { Search, Eye, ShieldCheck } from 'lucide-react';
 import {
   DataTable,
   Avatar,
@@ -12,8 +13,8 @@ import {
 } from '@/components/ui';
 import type { Column } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
-import { setUserRole, setKycStatus } from '@/services/adminService';
-import type { Profile, UserRole, KycStatus } from '@/types';
+import { setUserRole } from '@/services/adminService';
+import type { Profile, UserRole } from '@/types';
 import { USER_ROLE_LABELS } from '@/types';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -32,6 +33,7 @@ export function UserManagementPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [kycFilter, setKycFilter] = useState('');
+  const navigate = useNavigate();
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [updating, setUpdating] = useState(false);
 
@@ -79,21 +81,6 @@ export function UserManagementPage() {
     void loadUsers();
   };
 
-  const handleKycAction = async (userId: string, status: KycStatus) => {
-    setUpdating(true);
-    const { error } = await setKycStatus(userId, status);
-    setUpdating(false);
-
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    toast.success(`KYC ${status}.`);
-    setSelectedUser((prev) =>
-      prev && prev.user_id === userId ? { ...prev, kyc_status: status } : prev
-    );
-    void loadUsers();
-  };
 
   const columns: Column<Profile>[] = [
     {
@@ -243,25 +230,25 @@ export function UserManagementPage() {
               </select>
             </div>
             <div className="flex flex-wrap gap-2">
+              {/*
+                KYC decisions are NOT taken here.
+                Approving from this screen meant deciding on someone's identity
+                with nothing in front of you but their name and a status pill —
+                no NIN, no documents, no guarantors, no service records. The
+                KYC Review screen shows the whole application and is the only
+                place a decision should be made, so there is one queue, one
+                record of who decided, and no way to approve an application
+                nobody has actually read.
+              */}
               {selectedUser.kyc_status === 'pending' && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => handleKycAction(selectedUser.user_id, 'approved')}
-                    loading={updating}
-                  >
-                    Approve KYC
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    onClick={() => handleKycAction(selectedUser.user_id, 'rejected')}
-                    loading={updating}
-                  >
-                    Reject KYC
-                  </Button>
-                </>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  icon={ShieldCheck}
+                  onClick={() => navigate('/app/admin/kyc')}
+                >
+                  Review in KYC queue
+                </Button>
               )}
               {selectedUser.role !== 'admin' && (
                 <Button

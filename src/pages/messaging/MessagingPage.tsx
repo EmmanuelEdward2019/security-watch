@@ -7,7 +7,8 @@ import { Button, Modal, Avatar } from '@/components/ui';
 import { ConversationList, ChatWindow, MessageInput } from '@/components/messaging';
 import { uploadFile, buildObjectPath, STORAGE_BUCKETS } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
-import type { Conversation } from '@/types';
+import type { Conversation, UserRole } from '@/types';
+import { USER_ROLE_LABELS } from '@/types';
 import { cn } from '@/utils/cn';
 import toast from 'react-hot-toast';
 
@@ -50,7 +51,11 @@ export function MessagingPage() {
   const [sending, setSending] = useState(false);
 
   // Fetch users for new conversation
-  const [allUsers, setAllUsers] = useState<{ id: string; full_name: string; avatar_url?: string }[]>([]);
+  const [allUsers, setAllUsers] = useState<
+    { id: string; full_name: string; avatar_url?: string; role: string; is_team: boolean }[]
+  >([]);
+  const [contactSearch, setContactSearch] = useState('');
+  const [myCases, setMyCases] = useState<{ id: string; title: string }[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [newConvCaseId, setNewConvCaseId] = useState('');
   const [newConvTitle, setNewConvTitle] = useState('');
@@ -64,18 +69,59 @@ export function MessagingPage() {
     fetchConversations(user.user_id);
   }, [isAuthenticated, user, navigate, fetchConversations]);
 
+  /*
+   * Who can be messaged comes from `messaging_contacts()` (035), not a raw
+   * select on `profiles`. That select was capped at 50 with no search — so an
+   * administrator could not reach the 51st user — and, through RLS, never
+   * included the team for anyone else, so a user had no one to ask for help.
+   * The function applies the same `can_message` rule `create_conversation`
+   * enforces, and returns name, avatar and role only.
+   */
   useEffect(() => {
-    if (showNewConversation) {
-      supabase
-        .from('profiles')
-        .select('user_id, full_name, avatar_url')
-        .neq('user_id', user?.user_id ?? '')
-        .limit(50)
-        .then(({ data }) => {
-          setAllUsers((data ?? []).map((p) => ({ id: p.user_id, full_name: p.full_name ?? 'Unknown', avatar_url: p.avatar_url })));
+    if (!showNewConversation) return;
+    const handle = setTimeout(() => {
+      void supabase
+        .rpc('messaging_contacts', {
+          p_search: contactSearch.trim() || undefined,
+          p_limit: 100,
+        })
+        .then(({ data, error }) => {
+          if (error) {
+            toast.error(error.message);
+            return;
+          }
+          const rows = (data ?? []) as Array<{
+            user_id: string;
+            full_name: string | null;
+            avatar_url: string | null;
+            role: string;
+            is_team: boolean;
+          }>;
+          setAllUsers(
+            rows.map((p) => ({
+              id: p.user_id,
+              full_name: p.full_name ?? 'Unknown',
+              avatar_url: p.avatar_url ?? undefined,
+              role: p.role,
+              is_team: p.is_team,
+            }))
+          );
         });
-    }
-  }, [showNewConversation, user?.user_id]);
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [showNewConversation, contactSearch]);
+
+  // The case link was a free-text "Case ID" box. Nobody knows their case's
+  // UUID, so it was never filled in. Offer the cases this person can see.
+  useEffect(() => {
+    if (!showNewConversation) return;
+    void supabase
+      .from('cases')
+      .select('id, title')
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => setMyCases((data ?? []) as { id: string; title: string }[]));
+  }, [showNewConversation]);
 
   useEffect(() => {
     if (currentConversation) {
@@ -252,6 +298,7 @@ export function MessagingPage() {
         onClose={() => {
           setShowNewConversation(false);
           setSelectedUserIds([]);
+          setContactSearch('');
         }}
         title="New Conversation"
         size="lg"
@@ -259,7 +306,24 @@ export function MessagingPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-surface-700 mb-1">Select people</label>
-            <div className="max-h-48 overflow-y-auto border border-surface-200 rounded-lg divide-y divide-surface-100">
+            <p className="mb-2 text-xs text-surface-500">
+              The Security Watch team, and anyone you share a case or property enquiry with.
+            </p>
+            <input
+              type="search"
+              value={contactSearch}
+              onChange={(e) => setContactSearch(e.target.value)}
+              placeholder="Search by name"
+              className="mb-2 w-full rounded-lg border border-surface-300 px-3 py-2 text-sm"
+            />
+            {allUsers.length === 0 && (
+              <p className="rounded-lg border border-dashed border-surface-200 p-3 text-sm text-surface-500">
+                {contactSearch.trim()
+                  ? 'No one matches that name.'
+                  : 'No one to message yet. People appear here once you share a case or property enquiry with them.'}
+              </p>
+            )}
+            <div className="max-h-64 overflow-y-auto border border-surface-200 rounded-lg divide-y divide-surface-100">
               {allUsers.map((u) => (
                 <button
                   key={u.id}
@@ -275,7 +339,14 @@ export function MessagingPage() {
                   )}
                 >
                   <Avatar src={u.avatar_url} name={u.full_name} size="sm" />
-                  <span className="font-medium">{u.full_name}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{u.full_name}</span>
+                    <span className="block text-xs text-surface-500">
+                      {u.is_team
+                        ? 'The Security Watch team'
+                        : USER_ROLE_LABELS[u.role as UserRole] ?? u.role}
+                    </span>
+                  </span>
                   {selectedUserIds.includes(u.id) && (
                     <span className="ml-auto text-brand-600 text-sm">Selected</span>
                   )}
@@ -294,14 +365,19 @@ export function MessagingPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-surface-700 mb-1">Link to case (optional)</label>
-            <input
-              type="text"
+            <label className="block text-sm font-medium text-surface-700 mb-1">About a case (optional)</label>
+            <select
               value={newConvCaseId}
               onChange={(e) => setNewConvCaseId(e.target.value)}
-              placeholder="Case ID"
               className="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm"
-            />
+            >
+              <option value="">Not about a particular case</option>
+              {myCases.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => setShowNewConversation(false)}>

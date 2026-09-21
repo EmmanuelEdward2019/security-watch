@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.4"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -291,6 +291,9 @@ export type Database = {
           complainant_id: string
           created_at: string
           description: string
+          filing_fee_paid_at: string | null
+          filing_fee_required: boolean
+          filing_payment_id: string | null
           handling_institution: string | null
           handling_institution_id: string | null
           handling_state: string | null
@@ -316,6 +319,9 @@ export type Database = {
           complainant_id: string
           created_at?: string
           description: string
+          filing_fee_paid_at?: string | null
+          filing_fee_required?: boolean
+          filing_payment_id?: string | null
           handling_institution?: string | null
           handling_institution_id?: string | null
           handling_state?: string | null
@@ -341,6 +347,9 @@ export type Database = {
           complainant_id?: string
           created_at?: string
           description?: string
+          filing_fee_paid_at?: string | null
+          filing_fee_required?: boolean
+          filing_payment_id?: string | null
           handling_institution?: string | null
           handling_institution_id?: string | null
           handling_state?: string | null
@@ -383,6 +392,27 @@ export type Database = {
           {
             foreignKeyName: "cases_complainant_id_fkey"
             columns: ["complainant_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "cases_filing_payment_id_fkey"
+            columns: ["filing_payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_handling_institution_id_fkey"
+            columns: ["handling_institution_id"]
+            isOneToOne: false
+            referencedRelation: "institutions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_outcome_recorded_by_fkey"
+            columns: ["outcome_recorded_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["user_id"]
@@ -552,7 +582,7 @@ export type Database = {
           {
             foreignKeyName: "custodian_releases_case_id_fkey"
             columns: ["case_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "cases"
             referencedColumns: ["id"]
           },
@@ -1269,6 +1299,7 @@ export type Database = {
           file_path: string
           file_size: number
           file_type: string
+          gps_address: string | null
           gps_latitude: number | null
           gps_longitude: number | null
           id: string
@@ -1286,6 +1317,7 @@ export type Database = {
           file_path: string
           file_size: number
           file_type: string
+          gps_address?: string | null
           gps_latitude?: number | null
           gps_longitude?: number | null
           id?: string
@@ -1303,6 +1335,7 @@ export type Database = {
           file_path?: string
           file_size?: number
           file_type?: string
+          gps_address?: string | null
           gps_latitude?: number | null
           gps_longitude?: number | null
           id?: string
@@ -1326,6 +1359,7 @@ export type Database = {
           created_at: string
           description: string
           file_url: string
+          gps_address: string | null
           gps_latitude: number | null
           gps_longitude: number | null
           id: string
@@ -1343,6 +1377,7 @@ export type Database = {
           created_at?: string
           description: string
           file_url: string
+          gps_address?: string | null
           gps_latitude?: number | null
           gps_longitude?: number | null
           id?: string
@@ -1360,6 +1395,7 @@ export type Database = {
           created_at?: string
           description?: string
           file_url?: string
+          gps_address?: string | null
           gps_latitude?: number | null
           gps_longitude?: number | null
           id?: string
@@ -1481,6 +1517,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      payment_reminders: {
+        Row: {
+          channels: string[]
+          id: string
+          obligation_id: string
+          obligation_kind: string
+          sent_at: string
+          sequence_no: number
+          user_id: string
+        }
+        Insert: {
+          channels?: string[]
+          id?: string
+          obligation_id: string
+          obligation_kind: string
+          sent_at?: string
+          sequence_no: number
+          user_id: string
+        }
+        Update: {
+          channels?: string[]
+          id?: string
+          obligation_id?: string
+          obligation_kind?: string
+          sent_at?: string
+          sequence_no?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_reminders_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -2178,6 +2252,21 @@ export type Database = {
           },
         ]
       }
+      schema_migration_marks: {
+        Row: {
+          applied_at: string
+          mark: string
+        }
+        Insert: {
+          applied_at?: string
+          mark: string
+        }
+        Update: {
+          applied_at?: string
+          mark?: string
+        }
+        Relationships: []
+      }
       security_service_requests: {
         Row: {
           admin_notes: string | null
@@ -2338,8 +2427,8 @@ export type Database = {
           corroborations: number
           distinct_reporters: number
           latitude: number
-          longitude: number
           location: string
+          longitude: number
           nearest_km: number
           occurred_at: string
           status: string
@@ -2492,13 +2581,15 @@ export type Database = {
         Args: { p_case_id: string; p_description?: string; p_item_id: string }
         Returns: string
       }
+      can_message: { Args: { p_user_id: string }; Returns: boolean }
       can_read_media_object: { Args: { p_name: string }; Returns: boolean }
-      case_category_family: {
-        Args: { p_category: string }
-        Returns: string
-      }
+      case_category_family: { Args: { p_category: string }; Returns: string }
       case_corroboration: {
-        Args: { p_case_id: string; p_radius_km?: number; p_window_hours?: number }
+        Args: {
+          p_case_id: string
+          p_radius_km?: number
+          p_window_hours?: number
+        }
         Returns: {
           direct_matches: number
           first_report_at: string
@@ -2577,10 +2668,7 @@ export type Database = {
         }[]
       }
       current_role_name: { Args: never; Returns: string }
-      custodian_check_in: {
-        Args: { p_id?: string }
-        Returns: number
-      }
+      custodian_check_in: { Args: { p_id?: string }; Returns: number }
       custodian_releases_due: {
         Args: never
         Returns: {
@@ -2595,6 +2683,20 @@ export type Database = {
       disable_push_token: {
         Args: { p_reason: string; p_token: string }
         Returns: undefined
+      }
+      due_payment_reminders: {
+        Args: never
+        Returns: {
+          amount: number
+          currency: string
+          days_outstanding: number
+          next_sequence: number
+          obligation_id: string
+          obligation_kind: string
+          pay_link: string
+          subject: string
+          user_id: string
+        }[]
       }
       eligible_custodians: {
         Args: never
@@ -2627,10 +2729,7 @@ export type Database = {
           id: string
         }[]
       }
-      execute_custodian_release: {
-        Args: { p_id: string }
-        Returns: undefined
-      }
+      execute_custodian_release: { Args: { p_id: string }; Returns: undefined }
       find_referrals: {
         Args: { p_category?: string; p_limit?: number; p_state?: string }
         Returns: {
@@ -2670,14 +2769,8 @@ export type Database = {
         Args: { p_conversation_id: string }
         Returns: boolean
       }
-      is_eligible_custodian: {
-        Args: { p_user_id: string }
-        Returns: boolean
-      }
-      is_released_custodian: {
-        Args: { p_case_id: string }
-        Returns: boolean
-      }
+      is_eligible_custodian: { Args: { p_user_id: string }; Returns: boolean }
+      is_released_custodian: { Args: { p_case_id: string }; Returns: boolean }
       landlord_transactions: {
         Args: never
         Returns: {
@@ -2707,6 +2800,16 @@ export type Database = {
       mark_custodian_release_warned: {
         Args: { p_id: string }
         Returns: undefined
+      }
+      messaging_contacts: {
+        Args: { p_limit?: number; p_search?: string }
+        Returns: {
+          avatar_url: string
+          full_name: string
+          is_team: boolean
+          role: string
+          user_id: string
+        }[]
       }
       my_activity: {
         Args: { p_limit?: number }
@@ -2747,6 +2850,10 @@ export type Database = {
         }[]
       }
       owns_property: { Args: { p_property_id: string }; Returns: boolean }
+      payment_reminder_due_at: {
+        Args: { p_created: string; p_last_sent: string; p_sent: number }
+        Returns: string
+      }
       properties_nearby: {
         Args: {
           p_latitude: number
@@ -2822,6 +2929,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      record_payment_reminder: {
+        Args: {
+          p_channels: string[]
+          p_kind: string
+          p_obligation: string
+          p_sequence: number
+          p_user: string
+        }
+        Returns: boolean
+      }
       register_push_token: {
         Args: { p_device_name?: string; p_platform: string; p_token: string }
         Returns: undefined
@@ -2852,9 +2969,10 @@ export type Database = {
         Args: { p_id: string; p_status: string }
         Returns: undefined
       }
-      set_push_preview: {
-        Args: { p_show: boolean }
-        Returns: undefined
+      set_push_preview: { Args: { p_show: boolean }; Returns: undefined }
+      settle_case_filing_fee: {
+        Args: { p_payment_id: string }
+        Returns: string
       }
       settle_engagement_deposit: {
         Args: { p_payment_id: string }
@@ -2875,14 +2993,8 @@ export type Database = {
       }
       tsw_elevate: { Args: never; Returns: undefined }
       tsw_is_elevated: { Args: never; Returns: boolean }
-      tsw_min_cell: {
-        Args: never
-        Returns: number
-      }
-      unregister_push_token: {
-        Args: { p_token: string }
-        Returns: undefined
-      }
+      tsw_min_cell: { Args: never; Returns: number }
+      unregister_push_token: { Args: { p_token: string }; Returns: undefined }
       update_case_status: {
         Args: { p_case_id: string; p_status: string }
         Returns: undefined
@@ -2905,12 +3017,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2934,11 +3046,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2959,11 +3071,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2984,11 +3096,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3001,11 +3113,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

@@ -131,7 +131,7 @@ export function PropertyVerificationTab() {
         />
       </div>
 
-      <Modal isOpen={!!selected} onClose={() => setSelected(null)} title="Review Property" size="lg">
+      <Modal isOpen={!!selected} onClose={() => setSelected(null)} title="Review Property" size="2xl">
         {selected && (
           <div className="space-y-4">
             <div>

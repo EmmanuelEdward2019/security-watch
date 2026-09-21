@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
+import { offerCredentialToBrowser } from '@/lib/credentialStore';
 import { Mail, ArrowRight, Eye, EyeOff, Lock, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
@@ -96,6 +97,12 @@ export default function LoginPage() {
     if (result.error) {
       toast.error(result.error);
     } else {
+      // Ask the browser to remember this, while the form that submitted it is
+      // still on screen. The navigation below is a replaceState, which Chrome
+      // often does not treat as the "successful login" it needs to see before
+      // offering to save. See lib/credentialStore.
+      await offerCredentialToBrowser(data.email, data.password, result.user?.full_name);
+
       toast.success('Welcome back!');
       const path = getDashboardPath(result.user?.role);
       navigate(path, { replace: true });
@@ -309,7 +316,7 @@ export default function LoginPage() {
                         onChange={(e) => setRememberMe(e.target.checked)}
                         className="rounded border-surface-300 text-forest-600" 
                       />
-                      Remember me
+                      Remember my email
                     </label>
                     <button
                       type="button"

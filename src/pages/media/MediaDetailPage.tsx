@@ -268,7 +268,15 @@ export function MediaDetailPage() {
                     <MapPin size={18} className="text-brand-500" />
                     Location
                   </h3>
-                  <p className="text-sm text-surface-600">
+                  {/* The address is what tells a reviewer where this is at a
+                      glance; the coordinates are what can be checked. Both,
+                      in that order. */}
+                  {currentReport.gps_address && (
+                    <p className="text-sm font-medium text-surface-900">
+                      {currentReport.gps_address}
+                    </p>
+                  )}
+                  <p className="text-sm text-surface-600 tabular-nums">
                     {currentReport.gps_latitude?.toFixed(6)}, {currentReport.gps_longitude?.toFixed(6)}
                   </p>
                   <a

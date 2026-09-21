@@ -15,6 +15,8 @@ import { PRICE_MODULE_LABELS, type ServicePrice, type PriceModule, type Payment 
 import { cn } from '@/utils/cn';
 import toast from 'react-hot-toast';
 import { goToCheckout } from '@/lib/paymentRedirect';
+import { fetchCaseEngagements, type CaseEngagement } from '@/services/engagementService';
+import { purchasableServices, openEngagementFor, amountDue } from '@/lib/servicePurchase';
 
 /**
  * Checkout.
@@ -36,6 +38,7 @@ export function PaymentPage() {
   const [searchParams] = useSearchParams();
 
   const [prices, setPrices] = useState<ServicePrice[]>([]);
+  const [engagements, setEngagements] = useState<CaseEngagement[]>([]);
   const [loadingPrices, setLoadingPrices] = useState(true);
   const [selectedKey, setSelectedKey] = useState('');
   const [quantity, setQuantity] = useState(1);
@@ -50,6 +53,16 @@ export function PaymentPage() {
   const prefilledPurpose = searchParams.get('purpose');
   const caseId = searchParams.get('caseId') ?? undefined;
   const propertyId = searchParams.get('propertyId') ?? undefined;
+
+  const loadEngagements = useCallback(async () => {
+    if (!caseId) return;
+    const { engagements: rows } = await fetchCaseEngagements(caseId);
+    setEngagements(rows);
+  }, [caseId]);
+
+  useEffect(() => {
+    void loadEngagements();
+  }, [loadEngagements]);
 
   const loadPrices = useCallback(async () => {
     const { prices: list, error } = await fetchServicePrices();
@@ -98,17 +111,31 @@ export function PaymentPage() {
     [prices, selectedKey]
   );
 
-  const total = selected ? Number(selected.amount) * quantity : 0;
+  /**
+   * The engagement this service is being paid against, if any.
+   *
+   * The three professional services are not sold off the catalogue: an
+   * administrator books one and the complainant owes the DEPOSIT, which is
+   * typically half. Pricing them from `service_prices` here showed the full
+   * total on a screen the engagement panel had just labelled with the deposit.
+   * payments-initialize is the authority and now prices these from the
+   * engagement; this keeps the quoted figure honest before the redirect.
+   */
+  const selectedEngagement = openEngagementFor(engagements, selected?.key);
+
+  const total = selected ? amountDue(selected, selectedEngagement, quantity) : 0;
 
   const grouped = useMemo(() => {
     const out = new Map<PriceModule, ServicePrice[]>();
-    for (const price of prices) {
+    // Only what this person may actually buy: platform services, plus any
+    // professional service an administrator has booked against this case.
+    for (const price of purchasableServices(prices, engagements)) {
       const list = out.get(price.module) ?? [];
       list.push(price);
       out.set(price.module, list);
     }
     return out;
-  }, [prices]);
+  }, [prices, engagements]);
 
   const handleCheckout = async () => {
     if (!selected || !user) return;
@@ -329,7 +356,7 @@ export function PaymentPage() {
                       <p className="text-sm font-medium text-surface-800">{selected.label}</p>
                     </div>
 
-                    {selected.unit && (
+                    {selected.unit && !selectedEngagement && (
                       <div>
                         <label
                           htmlFor="payment-quantity"
@@ -351,8 +378,22 @@ export function PaymentPage() {
                       </div>
                     )}
 
+                    {selectedEngagement && (
+                      <p className="text-xs text-surface-500">
+                        Mobilisation deposit —{' '}
+                        {Math.round(Number(selectedEngagement.deposit_rate) * 100)}% of the agreed{' '}
+                        {formatCurrency(
+                          Number(selectedEngagement.total_amount),
+                          selectedEngagement.currency
+                        )}
+                        . The balance is due as the work proceeds.
+                      </p>
+                    )}
+
                     <div className="pt-2 border-t border-surface-200">
-                      <p className="text-sm text-surface-500">Total</p>
+                      <p className="text-sm text-surface-500">
+                        {selectedEngagement ? 'Deposit due now' : 'Total'}
+                      </p>
                       <p className="text-2xl font-bold text-surface-900 tabular-nums">
                         {formatCurrency(total, selected.currency)}
                       </p>

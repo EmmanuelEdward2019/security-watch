@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { MapPin } from 'lucide-react';
 import {
   DataTable,
   type Column,
@@ -172,7 +173,7 @@ export function MediaApprovalsPage() {
         />
       </div>
 
-      <Modal isOpen={!!selected} onClose={() => setSelected(null)} title="Review Media" size="xl">
+      <Modal isOpen={!!selected} onClose={() => setSelected(null)} title="Review Media" size="2xl">
         {selected && (
           <div className="space-y-4">
             <div>
@@ -212,6 +213,40 @@ export function MediaApprovalsPage() {
                 </a>
               )}
             </div>
+            {/*
+              Where it was recorded. The review modal showed the file, the
+              title and the description and nothing at all about place, so an
+              administrator deciding whether a report about a named
+              institution is plausible had no way to see whether it was even
+              filmed in the right state. The address is stored at capture
+              (033); the coordinates are the fallback and the thing that can
+              actually be checked.
+            */}
+            {(selected.gps_address ||
+              selected.gps_latitude != null ||
+              selected.gps_longitude != null) && (
+              <div className="flex items-start gap-2 rounded-lg border border-surface-200 bg-surface-50 p-3">
+                <MapPin size={16} className="mt-0.5 shrink-0 text-brand-500" />
+                <div className="min-w-0">
+                  {selected.gps_address ? (
+                    <p className="text-sm font-medium text-surface-900">{selected.gps_address}</p>
+                  ) : (
+                    <p className="text-sm text-surface-500">No address resolved for this fix.</p>
+                  )}
+                  {selected.gps_latitude != null && selected.gps_longitude != null && (
+                    <a
+                      href={`https://www.google.com/maps?q=${selected.gps_latitude},${selected.gps_longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs tabular-nums text-brand-600 hover:underline"
+                    >
+                      {selected.gps_latitude.toFixed(6)}, {selected.gps_longitude.toFixed(6)} — view on map
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-surface-700 mb-1">Title</label>
               <Input

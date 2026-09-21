@@ -10,6 +10,7 @@ import {
   Camera,
   AlertTriangle,
   RotateCcw,
+  Library,
   Crosshair,
 } from 'lucide-react';
 import {
@@ -32,6 +33,7 @@ import {
   generateFileHash,
 } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+import { reverseGeocode } from '@/services/geocodingService';
 import { addToLibrary } from '@/services/mediaLibraryService';
 
 type CaptureMode = 'video' | 'audio' | 'photo';
@@ -46,6 +48,12 @@ interface Capture {
 interface Coordinates {
   latitude: number;
   longitude: number;
+  /**
+   * Reverse-geocoded once, at capture. Null when the fix will not geocode —
+   * common in rural areas — and every screen falls back to the coordinates
+   * rather than inventing a place. See migration 033.
+   */
+  address?: string | null;
   accuracy: number;
 }
 
@@ -88,6 +96,9 @@ export default function FieldRecordingPage() {
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
+  /** Set once this capture is in the library, so it is never stored twice. */
+  const [libraryItemId, setLibraryItemId] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchInstitutions();
@@ -210,13 +221,20 @@ export default function FieldRecordingPage() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCoords({
+        const fix = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy,
-        });
+        };
+        // Show the coordinates immediately; the address catches up. A slow or
+        // unreachable geocoder must never hold up a recording in the field.
+        setCoords(fix);
         setLocating(false);
         toast.success('Location captured.');
+
+        void reverseGeocode(fix.latitude, fix.longitude).then((place) => {
+          if (place) setCoords((prev) => (prev ? { ...prev, address: place.displayName } : prev));
+        });
       },
       (error) => {
         setLocating(false);
@@ -348,6 +366,9 @@ export default function FieldRecordingPage() {
     replacePreview(null);
     setCapturedAt(null);
     setElapsed(0);
+    // A new capture is a new thing to keep. Leaving this set would make the
+    // button read "Saved to library" for a recording that is not in it.
+    setLibraryItemId(null);
   };
 
   const handleSubmit = async () => {
@@ -395,6 +416,7 @@ export default function FieldRecordingPage() {
       coords
         ? `GPS ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} (±${Math.round(coords.accuracy)}m)`
         : 'No GPS fix recorded',
+      coords?.address ? `Near ${coords.address}` : null,
       `SHA-256 ${hash}`,
     ]
       .filter(Boolean)
@@ -409,6 +431,7 @@ export default function FieldRecordingPage() {
       file_url: storedPath,
       gps_latitude: coords?.latitude,
       gps_longitude: coords?.longitude,
+      gps_address: coords?.address ?? null,
       tags: tags
         .split(',')
         .map((t) => t.trim())
@@ -430,16 +453,21 @@ export default function FieldRecordingPage() {
      * without recording it again; losing it is a inconvenience, not a lost
      * report.
      */
-    const { error: libraryError } = await addToLibrary({
-      ownerId: user.user_id,
-      file,
-      fileName: captured.name,
-      source: 'capture',
-      capturedAt,
-      latitude: coords?.latitude ?? null,
-      longitude: coords?.longitude ?? null,
-      note: title.trim(),
-    });
+    // Already kept via "Save to library" — storing it again would put two
+    // rows and two objects behind one recording.
+    const { error: libraryError } = libraryItemId
+      ? { error: null }
+      : await addToLibrary({
+          ownerId: user.user_id,
+          file,
+          fileName: captured.name,
+          source: 'capture',
+          capturedAt,
+          latitude: coords?.latitude ?? null,
+          longitude: coords?.longitude ?? null,
+          address: coords?.address ?? null,
+          note: title.trim(),
+        });
 
     setSubmitting(false);
 
@@ -454,6 +482,46 @@ export default function FieldRecordingPage() {
     setDescription('');
     setTags('');
     setInstitutionId('');
+  };
+
+  /**
+   * Keeps a capture without filing anything.
+   *
+   * The library copy used to happen only as a side effect of submitting a
+   * public report to an institution — so an agent who recorded something to
+   * attach to a case later had to first file it for publication, which is a
+   * different act with different consequences and a different queue. Anything
+   * captured here was otherwise lost the moment they pressed Discard.
+   *
+   * Filing a report still saves a copy; this is the path for everything else.
+   */
+  const handleSaveToLibrary = async () => {
+    if (!captured || !user) return;
+    if (libraryItemId) {
+      toast.success('Already saved to your library.');
+      return;
+    }
+
+    setSavingToLibrary(true);
+    const { item, error } = await addToLibrary({
+      ownerId: user.user_id,
+      file: new File([captured.blob], captured.name, { type: captured.type }),
+      fileName: captured.name,
+      source: 'capture',
+      capturedAt,
+      latitude: coords?.latitude ?? null,
+      longitude: coords?.longitude ?? null,
+      address: coords?.address ?? null,
+      note: title.trim() || null,
+    });
+    setSavingToLibrary(false);
+
+    if (error || !item) {
+      toast.error(error ?? 'Could not save that to your library.');
+      return;
+    }
+    setLibraryItemId(item.id);
+    toast.success('Saved to your library.');
   };
 
   const institutionOptions = institutions.map((i) => ({
@@ -597,9 +665,20 @@ export default function FieldRecordingPage() {
                     )}
 
                     {captured && (
-                      <Button variant="ghost" onClick={discard} icon={RotateCcw}>
-                        Discard &amp; retake
-                      </Button>
+                      <>
+                        <Button
+                          variant="secondary"
+                          icon={Library}
+                          loading={savingToLibrary}
+                          disabled={!!libraryItemId}
+                          onClick={() => void handleSaveToLibrary()}
+                        >
+                          {libraryItemId ? 'Saved to library' : 'Save to library'}
+                        </Button>
+                        <Button variant="ghost" onClick={discard} icon={RotateCcw}>
+                          Discard &amp; retake
+                        </Button>
+                      </>
                     )}
                   </>
                 )}
@@ -618,7 +697,8 @@ export default function FieldRecordingPage() {
                 {coords ? (
                   <Badge variant="success">
                     <MapPin size={12} className="inline mr-1" />
-                    {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)} · ±
+                    {coords.address ?? `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`}
+                    {' · ±'}
                     {Math.round(coords.accuracy)}m
                   </Badge>
                 ) : (

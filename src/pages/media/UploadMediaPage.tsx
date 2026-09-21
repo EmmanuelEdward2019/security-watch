@@ -17,6 +17,7 @@ import {
 } from '@/components/ui';
 import { STORAGE_BUCKETS, uploadFile, buildObjectPath, generateFileHash } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+import { reverseGeocode } from '@/services/geocodingService';
 
 const MEDIA_TYPE_OPTIONS = [
   { value: 'video', label: 'Video' },
@@ -42,7 +43,7 @@ export function UploadMediaPage() {
   const { institutions, createMediaReport, fetchInstitutions } = useMediaStore();
 
   const [file, setFile] = useState<{ id: string; file: File; preview?: string; size: number } | null>(null);
-  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [gps, setGps] = useState<{ lat: number; lng: number; address?: string | null } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
@@ -69,7 +70,13 @@ export function UploadMediaPage() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setGps(fix);
+          // Best effort and non-blocking: an upload must not wait on a
+          // geocoder, and a missing address is stored as null (033).
+          void reverseGeocode(fix.lat, fix.lng).then((place) => {
+            if (place) setGps((prev) => (prev ? { ...prev, address: place.displayName } : prev));
+          });
         },
         () => setGps(null)
       );
@@ -125,6 +132,7 @@ export function UploadMediaPage() {
       file_url: storedPath,
       gps_latitude: gps?.lat,
       gps_longitude: gps?.lng,
+      gps_address: gps?.address ?? null,
       // status and views are set by a database trigger — a reporter cannot file
       // something already marked published.
       tags,

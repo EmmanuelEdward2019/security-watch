@@ -5,7 +5,6 @@ import {
   MapPin,
   Calendar,
   MessageSquare,
-  CreditCard,
   Upload,
   Star,
   Mail,
@@ -33,6 +32,7 @@ import {
 import { CaseStatusTracker } from '@/components/cases/CaseStatusTracker';
 import { EvidenceTimeline } from '@/components/cases/EvidenceTimeline';
 import { EngagementPanel } from '@/components/cases/EngagementPanel';
+import { CasePaymentsPanel } from '@/components/cases/CasePaymentsPanel';
 import { CorroborationPanel } from '@/components/cases/CorroborationPanel';
 import { CustodianPanel } from '@/components/cases/CustodianPanel';
 import { EvidenceGrantPanel } from '@/components/cases/EvidenceGrantPanel';
@@ -415,13 +415,13 @@ export function CaseDetailPage() {
           animate={{ opacity: 1 }}
           className="space-y-6"
         >
-          <div className="flex justify-end">
-            <Button icon={CreditCard}>Make Payment</Button>
-          </div>
-          <EmptyState
-            icon={CreditCard}
-            title="No payments yet"
-            description="Payment history for this case will appear here."
+          <CasePaymentsPanel
+            caseId={currentCase.id}
+            urgency={currentCase.urgency}
+            filingFeeRequired={currentCase.filing_fee_required ?? false}
+            filingFeePaidAt={currentCase.filing_fee_paid_at}
+            isComplainant={currentCase.complainant_id === user?.user_id}
+            isAdmin={user?.role === 'admin'}
           />
         </motion.div>
       ),
