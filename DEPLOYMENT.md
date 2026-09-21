@@ -255,24 +255,61 @@ supabase functions deploy payment-reminders  --no-verify-jwt
 
 ### Scheduling the sweeps
 
-Three functions do nothing until something calls them on a timer. There is no
-`pg_cron` on this project, so use an external scheduler (GitHub Actions on a
-`schedule:` trigger, or any cron host) and send the secret as `x-sweep-secret`:
+Three functions do nothing until something calls them on a timer. Since
+migration 036 that is `pg_cron` inside the database — not GitHub Actions, which
+bills this private repository per minute, and a one-minute push cadence would
+cost roughly twenty times the free allowance to run a curl.
 
-```bash
-curl -X POST https://YOUR_PROJECT_REF.supabase.co/functions/v1/payment-reminders \
-  -H "x-sweep-secret: $PAYMENT_REMINDER_SECRET"
+| Function | Scheduled | Header | What happens if it never runs |
+|---|---|---|---|
+| `push-dispatch` | every minute (`push-dispatch-every-minute`) | `x-dispatch-secret` | Notifications appear in-app but no handset ever buzzes. |
+| `payment-reminders` | hourly at :17 (`payment-reminders-hourly`) | `x-sweep-secret` | Nobody is ever chased for money. The cadence lives in the database, so a missed run is caught up by the next. |
+| `custodian-sweep` | **not scheduled — deliberately** | `x-sweep-secret` | Release clocks never advance. Fails closed, so nothing is wrongly disclosed. |
+
+`custodian-sweep` releases case files to custodians when check-ins lapse.
+Switching it on starts automatic disclosure, so it is a decision to make on
+purpose, not a side effect of scheduling the others. When that decision is made:
+
+```sql
+SELECT cron.schedule('custodian-sweep-hourly', '41 * * * *',
+  $$SELECT public.tsw_invoke_sweep('custodian-sweep', 'x-sweep-secret', 'custodian_sweep_secret')$$);
 ```
 
-| Function | Cadence | What happens if it never runs |
-|---|---|---|
-| `push-dispatch` | every 1–5 min | Notifications appear in-app but no handset ever buzzes. |
-| `custodian-sweep` | hourly or daily | Custodian release clocks never advance. Fails closed, so nothing is wrongly disclosed. |
-| `payment-reminders` | hourly | Nobody is ever chased for money. The cadence lives in the database, so a missed run is caught up on the next one rather than skipped. |
+— after adding `custodian_sweep_secret` to Vault (below) with the same value as
+the `CUSTODIAN_SWEEP_SECRET` function secret.
 
-`payment-reminders` is safe to over-run: the UNIQUE constraint on
-`payment_reminders` means two overlapping sweeps cannot send the same nudge
-twice, and a run with nothing due is a single cheap query.
+**The jobs read their secrets from Vault, by name.** Never put a value in a
+migration; migrations are committed. Each Vault entry must equal its function
+secret, so rotating one means updating both:
+
+| Vault name | Must equal |
+|---|---|
+| `project_url` | `https://YOUR_PROJECT_REF.supabase.co` |
+| `payment_reminder_secret` | the `PAYMENT_REMINDER_SECRET` function secret |
+| `push_dispatch_secret` | the `PUSH_DISPATCH_SECRET` function secret |
+
+```sql
+-- create (or use vault.update_secret(id, value) to rotate)
+SELECT vault.create_secret('<value>', 'push_dispatch_secret');
+```
+
+A database without these entries — a local `supabase start` — gets jobs that do
+nothing, rather than jobs that call production from a laptop.
+
+**Checking they run:**
+
+```sql
+SELECT j.jobname, d.status, d.start_time
+FROM cron.job_run_details d JOIN cron.job j USING (jobid)
+ORDER BY d.start_time DESC LIMIT 10;
+
+-- what the functions answered (pg_net keeps these for a few hours)
+SELECT id, status_code, content FROM net._http_response ORDER BY id DESC LIMIT 5;
+```
+
+A 401 in `net._http_response` means a Vault entry and its function secret have
+drifted apart. `payment-reminders` is safe to over-run: the UNIQUE constraint on
+`payment_reminders` means overlapping sweeps cannot send the same nudge twice.
 
 ---
 
