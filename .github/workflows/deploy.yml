@@ -45,7 +45,7 @@ jobs:
   deploy:
     name: Deploy to Vercel
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # Attach this to a protected GitHub environment if you want a manual
     # approval gate before production.
