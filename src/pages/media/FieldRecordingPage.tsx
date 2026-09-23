@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Video,
@@ -12,6 +13,7 @@ import {
   RotateCcw,
   Library,
   Crosshair,
+  Paperclip,
 } from 'lucide-react';
 import {
   Button,
@@ -71,6 +73,7 @@ interface Coordinates {
  * off the public archive.
  */
 export default function FieldRecordingPage() {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const { institutions, fetchInstitutions, createMediaReport } = useMediaStore();
 
@@ -212,13 +215,34 @@ export default function FieldRecordingPage() {
     }
   };
 
-  const captureLocation = () => {
+  /**
+   * Reads the fix. `auto` is the one taken when capture starts.
+   *
+   * The page promises "time and location are stamped onto the report
+   * automatically", but location only ever happened if the agent found and
+   * pressed a button — so most reports carried none, and the promise was
+   * untrue. It is now requested the moment a capture starts, exactly as the
+   * mobile app does, and stays non-blocking: the recording never waits on a
+   * fix, and the address catches up after the coordinates.
+   *
+   * The automatic pass stays quiet on success (nobody asked for it) but still
+   * speaks up when location is denied, because that changes what the report
+   * can claim.
+   */
+  const captureLocation = (auto = false) => {
     if (!('geolocation' in navigator)) {
       toast.error('This device does not report location.');
       return;
     }
 
+    // A capture already carrying a fix must not have it replaced by a later
+    // one — the stamp describes where recording started. Checked BEFORE the
+    // busy flag: returning after setting it would leave the button spinning
+    // for the rest of the session.
+    if (auto && (coords || locating)) return;
+
     setLocating(true);
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const fix = {
@@ -230,7 +254,7 @@ export default function FieldRecordingPage() {
         // unreachable geocoder must never hold up a recording in the field.
         setCoords(fix);
         setLocating(false);
-        toast.success('Location captured.');
+        if (!auto) toast.success('Location captured.');
 
         void reverseGeocode(fix.latitude, fix.longitude).then((place) => {
           if (place) setCoords((prev) => (prev ? { ...prev, address: place.displayName } : prev));
@@ -263,6 +287,10 @@ export default function FieldRecordingPage() {
       toast.error('Start the camera first.');
       return;
     }
+
+    // Stamped at the start of the recording, not at submit: where the agent
+    // was when they pressed record is the evidentiary fact.
+    captureLocation(true);
 
     chunksRef.current = [];
     const mimeType = pickMimeType(mode);
@@ -321,6 +349,9 @@ export default function FieldRecordingPage() {
       toast.error('Start the camera first.');
       return;
     }
+
+    // Same moment as the shutter, and never blocking it.
+    captureLocation(true);
 
     /*
      * A camera that is live but has not yet decoded a frame reports
@@ -524,6 +555,45 @@ export default function FieldRecordingPage() {
     toast.success('Saved to your library.');
   };
 
+  /**
+   * Take this capture to a case.
+   *
+   * Attaching needs a library item — evidence references a stored object and
+   * its hash — so this saves first and then opens the case picker on the
+   * library with that item selected. Without it, "use this on a case" meant
+   * save, navigate, find the recording in a grid, and attach: four steps for
+   * one intention.
+   */
+  const handleUseInCase = async () => {
+    if (!captured || !user) return;
+
+    let itemId = libraryItemId;
+    if (!itemId) {
+      setSavingToLibrary(true);
+      const { item, error } = await addToLibrary({
+        ownerId: user.user_id,
+        file: new File([captured.blob], captured.name, { type: captured.type }),
+        fileName: captured.name,
+        source: 'capture',
+        capturedAt,
+        latitude: coords?.latitude ?? null,
+        longitude: coords?.longitude ?? null,
+        address: coords?.address ?? null,
+        note: title.trim() || null,
+      });
+      setSavingToLibrary(false);
+
+      if (error || !item) {
+        toast.error(error ?? 'Could not save that to your library.');
+        return;
+      }
+      setLibraryItemId(item.id);
+      itemId = item.id;
+    }
+
+    navigate(`/app/media/library?attach=${itemId}`);
+  };
+
   const institutionOptions = institutions.map((i) => ({
     value: i.id,
     label: `${i.name} — ${i.location}`,
@@ -560,6 +630,23 @@ export default function FieldRecordingPage() {
                       type="button"
                       disabled={recording}
                       onClick={() => {
+                        /*
+                         * Switching format ends the capture session — the
+                         * stream is released and re-acquired for the new one,
+                         * which is what keeps the camera and microphone from
+                         * conflicting. That also throws away whatever is on
+                         * screen, and it used to do so in silence: one tap on
+                         * "Audio" and a recording nobody had kept was gone.
+                         */
+                        if (
+                          captured &&
+                          !libraryItemId &&
+                          !window.confirm(
+                            'This recording has not been saved to your library. Switching format will discard it. Continue?'
+                          )
+                        ) {
+                          return;
+                        }
                         setMode(m);
                         discard();
                         // Only re-acquire if we already have permission. On a
@@ -675,6 +762,14 @@ export default function FieldRecordingPage() {
                         >
                           {libraryItemId ? 'Saved to library' : 'Save to library'}
                         </Button>
+                        <Button
+                          variant="secondary"
+                          icon={Paperclip}
+                          loading={savingToLibrary}
+                          onClick={() => void handleUseInCase()}
+                        >
+                          Use in a case
+                        </Button>
                         <Button variant="ghost" onClick={discard} icon={RotateCcw}>
                           Discard &amp; retake
                         </Button>
@@ -685,7 +780,7 @@ export default function FieldRecordingPage() {
 
                 <Button
                   variant="outline"
-                  onClick={captureLocation}
+                  onClick={() => captureLocation()}
                   loading={locating}
                   icon={Crosshair}
                 >

@@ -11,6 +11,7 @@
  * not be used on two cases without uploading it twice, and footage from a body
  * camera or a wearable had nowhere to go at all.
  */
+import { useSearchParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -51,6 +52,7 @@ export default function MediaLibraryPage() {
   const { cases, fetchCases } = useCaseStore();
   const { institutions, fetchInstitutions } = useMediaStore();
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<MediaLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -76,6 +78,31 @@ export default function MediaLibraryPage() {
   }, [user]);
 
   useEffect(() => { void load(); }, [load]);
+
+  /*
+   * `?attach=<id>` opens the attach dialog for one item.
+   *
+   * The field recording screen hands off here after saving a capture: an item
+   * has to exist before it can be attached, so "use in a case" saves first and
+   * then sends the agent straight to the case picker rather than leaving them
+   * to find the recording in a grid.
+   *
+   * The parameter is cleared once consumed, so a refresh or a back-navigation
+   * does not reopen a dialog the agent has already dealt with.
+   */
+  useEffect(() => {
+    const id = searchParams.get('attach');
+    if (!id || items.length === 0) return;
+
+    const item = items.find((i) => i.id === id);
+    if (item) setAttachTarget(item);
+    else toast.error('That recording is no longer in your library.');
+
+    setSearchParams((params) => {
+      params.delete('attach');
+      return params;
+    }, { replace: true });
+  }, [items, searchParams, setSearchParams]);
   useEffect(() => { void fetchCases(); void fetchInstitutions(); }, [fetchCases, fetchInstitutions]);
 
   const visible = useMemo(() => {
