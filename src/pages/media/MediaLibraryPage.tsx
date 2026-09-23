@@ -16,8 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Upload, Film, Mic, Image as ImageIcon, FileText, Trash2,
-  Paperclip, Send, MapPin, ShieldCheck, Search,
-} from 'lucide-react';
+  Paperclip, Send, MapPin, ShieldCheck, Search, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import {
@@ -28,7 +27,7 @@ import { useCaseStore } from '@/stores/caseStore';
 import { useMediaStore } from '@/stores/mediaStore';
 import { STORAGE_BUCKETS, resolveStorageUrl } from '@/lib/supabase';
 import {
-  addToLibrary, listLibrary, deleteLibraryItem, attachToCase, submitToAdmin,
+  addToLibrary, listLibrary, deleteLibraryItem, attachToCase, submitToAdmin, renameLibraryItem,
 } from '@/services/mediaLibraryService';
 import { MEDIA_KIND_LABELS, type MediaLibraryItem } from '@/types';
 
@@ -62,8 +61,36 @@ export default function MediaLibraryPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [preview, setPreview] = useState<{ item: MediaLibraryItem; url: string } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<MediaLibraryItem | null>(null);
+  const [newName, setNewName] = useState('');
+  const [renaming, setRenaming] = useState(false);
   const [attachTarget, setAttachTarget] = useState<MediaLibraryItem | null>(null);
   const [submitTarget, setSubmitTarget] = useState<MediaLibraryItem | null>(null);
+
+  /**
+   * Renaming goes through the server function, not an UPDATE.
+   *
+   * The name it returns is the one that was stored: blanks are refused, path
+   * separators stripped, and the original extension kept so a download still
+   * opens. Showing what was actually saved keeps the card from claiming a
+   * name the database does not hold.
+   */
+  const submitRename = async () => {
+    if (!renameTarget) return;
+    setRenaming(true);
+    const { name, error } = await renameLibraryItem(renameTarget.id, newName);
+    setRenaming(false);
+
+    if (error || !name) {
+      toast.error(error ?? 'Could not rename that recording.');
+      return;
+    }
+    setItems((rows) =>
+      rows.map((r) => (r.id === renameTarget.id ? { ...r, file_name: name } : r))
+    );
+    setRenameTarget(null);
+    toast.success(`Renamed to ${name}`);
+  };
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -255,18 +282,31 @@ export default function MediaLibraryPage() {
               <motion.div key={item.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                 <Card className="h-full">
                   <CardContent className="flex h-full flex-col gap-3 p-4">
+                    {/*
+                      The thumbnail was the only thing that opened anything,
+                      so the file name — the part anyone would aim at — did
+                      nothing. Both are one button now. The actions below stay
+                      outside it, so attaching or deleting cannot be hit by
+                      someone meaning to open.
+                    */}
                     <button
                       type="button"
                       onClick={() => void openPreview(item)}
-                      className="flex aspect-video items-center justify-center rounded-lg bg-surface-100 transition-colors hover:bg-surface-200"
+                      className="group block w-full text-left"
+                      aria-label={`Open ${item.file_name}`}
                     >
-                      <Icon className="h-8 w-8 text-surface-400" />
+                      <span className="flex aspect-video items-center justify-center rounded-lg bg-surface-100 transition-colors group-hover:bg-surface-200">
+                        <Icon className="h-8 w-8 text-surface-400" />
+                      </span>
+                      <span
+                        className="mt-3 block truncate text-sm font-medium text-surface-900 group-hover:text-brand-700"
+                        title={item.file_name}
+                      >
+                        {item.file_name}
+                      </span>
                     </button>
 
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-surface-900" title={item.file_name}>
-                        {item.file_name}
-                      </p>
                       <p className="mt-0.5 text-xs text-surface-500">
                         {MEDIA_KIND_LABELS[item.media_kind]} · {formatBytes(item.file_size)}
                       </p>
@@ -286,6 +326,10 @@ export default function MediaLibraryPage() {
                     </div>
 
                     <div className="flex items-center gap-1.5 border-t border-surface-100 pt-3">
+                      <Button size="sm" variant="secondary" icon={Pencil}
+                        onClick={() => { setRenameTarget(item); setNewName(item.file_name); }}>
+                        Rename
+                      </Button>
                       <Button size="sm" variant="secondary" icon={Paperclip}
                         onClick={() => setAttachTarget(item)}>
                         Case
@@ -312,6 +356,43 @@ export default function MediaLibraryPage() {
       )}
 
       <PreviewModal preview={preview} onClose={() => setPreview(null)} />
+
+      <Modal
+        isOpen={renameTarget !== null}
+        onClose={() => setRenameTarget(null)}
+        title="Rename recording"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-surface-600">
+            Only the name changes. When it was recorded, where, and the digest that proves
+            the file has not been altered all stay as they are.
+          </p>
+
+          <div>
+            <label htmlFor="rename-input" className="mb-1 block text-sm font-medium text-surface-700">
+              Name
+            </label>
+            <input
+              id="rename-input"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void submitRename()}
+              placeholder="Market raid, 14 March"
+              className="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setRenameTarget(null)}>
+              Cancel
+            </Button>
+            <Button loading={renaming} disabled={!newName.trim()} onClick={() => void submitRename()}>
+              Save name
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <AttachModal
         item={attachTarget}

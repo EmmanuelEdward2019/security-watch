@@ -2943,6 +2943,10 @@ export type Database = {
         Args: { p_device_name?: string; p_platform: string; p_token: string }
         Returns: undefined
       }
+      rename_library_item: {
+        Args: { p_item_id: string; p_name: string }
+        Returns: string
+      }
       request_account_deletion: { Args: { p_reason?: string }; Returns: string }
       resolve_evidence_grant: {
         Args: { p_token: string }
@@ -2992,6 +2996,10 @@ export type Database = {
         Returns: string
       }
       tsw_elevate: { Args: never; Returns: undefined }
+      tsw_invoke_sweep: {
+        Args: { p_function: string; p_header: string; p_secret_name: string }
+        Returns: number
+      }
       tsw_is_elevated: { Args: never; Returns: boolean }
       tsw_min_cell: { Args: never; Returns: number }
       unregister_push_token: { Args: { p_token: string }; Returns: undefined }

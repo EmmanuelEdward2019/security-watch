@@ -160,6 +160,31 @@ export async function deleteLibraryItem(
  * The RPC re-checks that the caller participates in the case. Without that,
  * anyone could inject material into any investigation.
  */
+/**
+ * Renames a library item.
+ *
+ * Goes through `rename_library_item` (037) rather than an UPDATE. The table's
+ * update policy covers every column, so a client-side rename would also be a
+ * way to rewrite `file_hash` or repoint `file_path` — and those are what the
+ * chain-of-custody claim rests on. The function touches the name and nothing
+ * else, and a trigger pins the rest.
+ *
+ * Returns the stored name, which may differ from the one asked for: the
+ * original extension is kept so a download still opens.
+ */
+export async function renameLibraryItem(
+  itemId: string,
+  name: string
+): Promise<{ name: string | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('rename_library_item', {
+    p_item_id: itemId,
+    p_name: name,
+  });
+
+  if (error) return { name: null, error: error.message };
+  return { name: data as string, error: null };
+}
+
 export async function attachToCase(
   itemId: string,
   caseId: string,

@@ -7,8 +7,7 @@ import {
   Clock,
   Plus,
   Upload,
-  Building2,
-} from 'lucide-react';
+  Building2, Library } from 'lucide-react';
 import { useMediaStore } from '@/stores/mediaStore';
 import { useAuthStore } from '@/stores/authStore';
 import {
@@ -85,11 +84,24 @@ export function MediaAgentDashboard() {
               Manage your media reports and submissions
             </p>
           </div>
-          <Link to="/app/media/upload">
-            <Button variant="primary" icon={Plus} size="lg">
-              Upload Report
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {/*
+              The library had no route in from here. Its contents come from
+              this dashboard's own work — everything recorded or imported —
+              and the only way to reach it was the link buried on the field
+              recording screen.
+            */}
+            <Link to="/app/media/library">
+              <Button variant="outline" icon={Library} size="lg">
+                Media library
+              </Button>
+            </Link>
+            <Link to="/app/media/upload">
+              <Button variant="primary" icon={Plus} size="lg">
+                Upload Report
+              </Button>
+            </Link>
+          </div>
         </motion.div>
 
         {/* Stats */}
