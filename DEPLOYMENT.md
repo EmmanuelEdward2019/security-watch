@@ -255,32 +255,61 @@ supabase functions deploy payment-reminders  --no-verify-jwt
 
 ### Scheduling the sweeps
 
-Three functions do nothing until something calls them on a timer. Since
-migration 036 that is `pg_cron` inside the database — not GitHub Actions, which
-bills this private repository per minute, and a one-minute push cadence would
-cost roughly twenty times the free allowance to run a curl.
+**Nothing is scheduled, deliberately. pg_cron is not installed on this
+project.** Read this section before changing that.
 
-| Function | Scheduled | Header | What happens if it never runs |
-|---|---|---|---|
-| `push-dispatch` | every minute (`push-dispatch-every-minute`) | `x-dispatch-secret` | Notifications appear in-app but no handset ever buzzes. |
-| `payment-reminders` | hourly at :17 (`payment-reminders-hourly`) | `x-sweep-secret` | Nobody is ever chased for money. The cadence lives in the database, so a missed run is caught up by the next. |
-| `custodian-sweep` | **not scheduled — deliberately** | `x-sweep-secret` | Release clocks never advance. Fails closed, so nothing is wrongly disclosed. |
+On 25 September 2026 the database stopped accepting connections and nobody
+could sign in to either client. The cause was the schedule in migration 036:
+`push-dispatch` every minute, posting through pg_net with a 60-second timeout.
+pg_net sends from a single background worker, so when those calls became slow
+each one held that worker for up to a minute while a new one was queued every
+minute. Postgres then could not start the job at all — `cron job 2 job startup
+timeout`, once a minute for hours — and the instance saturated. Recovery
+needed a project restart, and pg_cron was removed by hand.
 
-`custodian-sweep` releases case files to custodians when check-ins lapse.
-Switching it on starts automatic disclosure, so it is a decision to make on
-purpose, not a side effect of scheduling the others. When that decision is made:
+Three rules came out of it, and 038 encodes them:
+
+| | Rule |
+|---|---|
+| Cadence | Five minutes, never one. Nothing here is urgent to the minute. |
+| Timeout | Shorter than the interval. A timeout longer than the gap guarantees a backlog the schedule can never drain. |
+| Back pressure | `tsw_invoke_sweep` counts `net.http_request_queue` first and skips its turn when requests are pending. A sweep that cannot keep up must skip, not pile on. |
+
+**What is off while nothing is scheduled:**
+
+| Function | Consequence |
+|---|---|
+| `push-dispatch` | Notifications still appear in-app; none reaches a handset. No device is registered for push yet, so today this costs nothing. |
+| `payment-reminders` | Nobody is chased for an unpaid filing fee, deposit or verification. The cadence lives in the database (032), so a later run catches up rather than skipping anyone. |
+| `custodian-sweep` | Never scheduled. Releases case files to custodians, so switching it on is a decision to make on purpose. |
+
+**To turn them back on**, install pg_cron (Dashboard → Database → Extensions),
+confirm the Vault entries below, then:
 
 ```sql
-SELECT cron.schedule('custodian-sweep-hourly', '41 * * * *',
-  $$SELECT public.tsw_invoke_sweep('custodian-sweep', 'x-sweep-secret', 'custodian_sweep_secret')$$);
+SELECT cron.schedule('push-dispatch-every-5-min', '*/5 * * * *',
+  $$SELECT public.tsw_invoke_sweep('push-dispatch', 'x-dispatch-secret', 'push_dispatch_secret')$$);
+
+SELECT cron.schedule('payment-reminders-hourly', '17 * * * *',
+  $$SELECT public.tsw_invoke_sweep('payment-reminders', 'x-sweep-secret', 'payment_reminder_secret')$$);
 ```
 
-— after adding `custodian_sweep_secret` to Vault (below) with the same value as
-the `CUSTODIAN_SWEEP_SECRET` function secret.
+Then watch it for several cycles before walking away:
+
+```sql
+SELECT j.jobname, d.status, d.start_time
+FROM cron.job_run_details d JOIN cron.job j USING (jobid)
+ORDER BY d.start_time DESC LIMIT 10;
+
+SELECT count(*) AS queued FROM net.http_request_queue;   -- must not climb
+SELECT id, status_code, content FROM net._http_response ORDER BY id DESC LIMIT 5;
+```
+
+A queue that grows run after run is the failure that caused the outage. Stop
+the job rather than waiting to see whether it recovers.
 
 **The jobs read their secrets from Vault, by name.** Never put a value in a
-migration; migrations are committed. Each Vault entry must equal its function
-secret, so rotating one means updating both:
+migration; migrations are committed. Each must equal its function secret:
 
 | Vault name | Must equal |
 |---|---|
@@ -289,27 +318,13 @@ secret, so rotating one means updating both:
 | `push_dispatch_secret` | the `PUSH_DISPATCH_SECRET` function secret |
 
 ```sql
--- create (or use vault.update_secret(id, value) to rotate)
 SELECT vault.create_secret('<value>', 'push_dispatch_secret');
 ```
 
-A database without these entries — a local `supabase start` — gets jobs that do
-nothing, rather than jobs that call production from a laptop.
-
-**Checking they run:**
-
-```sql
-SELECT j.jobname, d.status, d.start_time
-FROM cron.job_run_details d JOIN cron.job j USING (jobid)
-ORDER BY d.start_time DESC LIMIT 10;
-
--- what the functions answered (pg_net keeps these for a few hours)
-SELECT id, status_code, content FROM net._http_response ORDER BY id DESC LIMIT 5;
-```
-
-A 401 in `net._http_response` means a Vault entry and its function secret have
-drifted apart. `payment-reminders` is safe to over-run: the UNIQUE constraint on
-`payment_reminders` means overlapping sweeps cannot send the same nudge twice.
+An alternative worth considering instead of pg_cron: an external scheduler
+(GitHub Actions, or any cron host) calling the functions over HTTPS. It costs
+Actions minutes on a private repository, but a scheduler outside the database
+cannot take the database down.
 
 ---
 
