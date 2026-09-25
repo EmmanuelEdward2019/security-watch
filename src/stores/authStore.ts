@@ -118,11 +118,26 @@ function friendlyAuthError(message: string): string {
   if (m.includes('token has expired') || m.includes('expired')) {
     return 'That code has expired. Request a new one.';
   }
-  if (m.includes('rate limit') || m.includes('too many')) {
+  // Both spellings: the human message says "rate limit", the error code says
+  // "over_request_rate_limit". Either can reach here depending on the caller.
+  if (
+    m.includes('rate limit') ||
+    m.includes('rate_limit') ||
+    m.includes('too many') ||
+    m.includes('too_many')
+  ) {
     return 'Too many attempts. Wait a minute and try again.';
   }
   if (m.includes('user already registered')) {
     return 'An account with that email already exists. Sign in instead.';
+  }
+  if (
+    m.includes('failed to fetch') ||
+    m.includes('network request failed') ||
+    m.includes('fetch failed') ||
+    m.includes('timeout')
+  ) {
+    return 'Could not reach the server. Check your connection and try again.';
   }
   return message;
 }
